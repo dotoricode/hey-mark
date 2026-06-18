@@ -309,10 +309,10 @@ export default function Home() {
         </div>
         <div className="hero-copy">
           <span className="eyebrow">Cafe Marketing Copilot</span>
-          <h1>질문은 줄이고, 바로 써먹을 카페 마케팅 아이디어로 좁힙니다.</h1>
+          <h1>우리 카페 상황부터 같이 봅니다.</h1>
           <p>
-            지도 링크와 지금 문제만 넣으면, 부족한 정보는 대화 중에 다시 묻고 실행안으로
-            정리합니다.
+            네이버지도 링크나 카페명, 지금 겪는 문제만 남겨주세요. 필요한 정보는 대화로
+            확인하고 실행 순서까지 정리합니다.
           </p>
         </div>
         <div className="knowledge-pill">
