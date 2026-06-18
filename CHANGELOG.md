@@ -4,6 +4,13 @@ All notable changes to Hey Mark are tracked here.
 
 This project starts versioning at `v0.0.1` and follows Semantic Versioning.
 
+## [0.1.4] - 2026-06-18
+
+### Fixed
+
+- Added Gemini request retries across URL/Search tools, JSON MIME mode, and plain generation.
+- Included safe Gemini response body snippets in fallback diagnostics for production troubleshooting.
+
 ## [0.1.3] - 2026-06-18
 
 ### Fixed
