@@ -4,6 +4,13 @@ All notable changes to Hey Mark are tracked here.
 
 This project starts versioning at `v0.0.1` and follows Semantic Versioning.
 
+## [0.1.3] - 2026-06-18
+
+### Fixed
+
+- Removed Gemini structured-output request parameters that caused production API `400` responses.
+- Kept defensive JSON cleanup for Gemini text responses with raw control characters.
+
 ## [0.1.2] - 2026-06-18
 
 ### Fixed
