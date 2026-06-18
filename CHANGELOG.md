@@ -4,6 +4,13 @@ All notable changes to Hey Mark are tracked here.
 
 This project starts versioning at `v0.0.1` and follows Semantic Versioning.
 
+## [0.1.2] - 2026-06-18
+
+### Fixed
+
+- Added Gemini JSON response schema guidance for structured copilot responses.
+- Added a fallback JSON parser pass for unescaped control characters in model output.
+
 ## [0.1.1] - 2026-06-18
 
 ### Fixed
