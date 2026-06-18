@@ -5,6 +5,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  LoaderCircle,
   MapPin,
   MessageCircleQuestion,
   Send,
@@ -12,7 +13,7 @@ import {
   Store,
   Zap
 } from "lucide-react";
-import { FormEvent, useMemo, useState, useTransition } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import type {
   CafeCopilotResponse,
   CafeProfile,
@@ -56,8 +57,10 @@ function ProgressRing({ value }: { value: number }) {
       style={{ "--progress": `${Math.max(0, Math.min(100, value))}%` } as React.CSSProperties}
       aria-label={`전략 확신도 ${value}%`}
     >
-      <span>{value}</span>
-      <small>%</small>
+      <span className="progress-score">
+        <span className="progress-value">{value}</span>
+        <small className="progress-unit">%</small>
+      </span>
     </div>
   );
 }
@@ -80,12 +83,73 @@ function FocusBars({ artifact }: { artifact: StrategyArtifact }) {
   );
 }
 
+function formatElapsed(ms: number) {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+
+  return `${(ms / 1000).toFixed(1)}초`;
+}
+
+function AiUsageStrip({ response }: { response: CafeCopilotResponse }) {
+  if (!response.aiUsage) {
+    return null;
+  }
+
+  const usage = response.aiUsage;
+  const tokenLabel =
+    typeof usage.totalTokens === "number"
+      ? `${usage.totalTokens.toLocaleString()} tokens`
+      : "토큰 집계 대기";
+
+  return (
+    <div className="ai-usage-strip" aria-label="AI 사용 진단">
+      <span>{usage.provider === "gemini" ? "Gemini 사용" : "Fallback 사용"}</span>
+      <strong>{usage.model}</strong>
+      <span>{usage.attempt}</span>
+      <span>{formatElapsed(usage.elapsedMs)}</span>
+      <span>{tokenLabel}</span>
+    </div>
+  );
+}
+
+function MetricDashboard({ artifact }: { artifact: StrategyArtifact }) {
+  if (!artifact.metrics.length) {
+    return null;
+  }
+
+  return (
+    <div className="metric-dashboard" aria-label="정량 지표">
+      {artifact.metrics.map((metric) => (
+        <article className="metric-card" key={metric.label}>
+          <div className="metric-card-head">
+            <span>{metric.label}</span>
+            <strong>
+              {metric.value}
+              <small>{metric.unit}</small>
+            </strong>
+          </div>
+          <div className="metric-bar-track" aria-hidden="true">
+            <span style={{ width: `${metric.value}%` }} />
+          </div>
+          <b>{metric.status}</b>
+          <p>{metric.explanation}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function ArtifactView({
   response,
-  onShortcut
+  onShortcut,
+  disabled,
+  activeAction
 }: {
   response: CafeCopilotResponse;
-  onShortcut: (value: string) => void;
+  onShortcut: (value: string, actionId: string) => void;
+  disabled: boolean;
+  activeAction: string | null;
 }) {
   const artifact = response.artifact;
 
@@ -100,22 +164,35 @@ function ArtifactView({
         <div className="confidence-card">
           <ProgressRing value={artifact.confidence} />
           <strong>{confidenceLabel(artifact.confidence)}</strong>
-          <span>{response.mode === "gemini" ? "Gemini 연결" : "기본 플레이북"}</span>
         </div>
       </div>
+
+      <AiUsageStrip response={response} />
 
       <div className="insight-band">
         <Sparkles size={18} aria-hidden="true" />
         <p>{artifact.hiddenInsight}</p>
       </div>
 
+      <MetricDashboard artifact={artifact} />
+
       <FocusBars artifact={artifact} />
 
       <div className="shortcut-row">
-        {response.intentShortcuts.map((shortcut) => (
-          <button key={shortcut} type="button" onClick={() => onShortcut(shortcut)}>
+        {response.intentShortcuts.map((shortcut, index) => (
+          <button
+            key={shortcut}
+            type="button"
+            className={activeAction === `shortcut-${index}` ? "is-active" : ""}
+            disabled={disabled}
+            onClick={() => onShortcut(shortcut, `shortcut-${index}`)}
+          >
+            {activeAction === `shortcut-${index}` ? (
+              <LoaderCircle className="spin-icon" size={16} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={16} aria-hidden="true" />
+            )}
             {shortcut}
-            <ChevronRight size={16} aria-hidden="true" />
           </button>
         ))}
       </div>
@@ -131,8 +208,22 @@ function ArtifactView({
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => onShortcut(`${question.label}: ${suggestion}`)}
+                  className={
+                    activeAction === `question-${question.id}-${suggestion}`
+                      ? "is-active"
+                      : ""
+                  }
+                  disabled={disabled}
+                  onClick={() =>
+                    onShortcut(
+                      `${question.label}: ${suggestion}`,
+                      `question-${question.id}-${suggestion}`
+                    )
+                  }
                 >
+                  {activeAction === `question-${question.id}-${suggestion}` ? (
+                    <LoaderCircle className="spin-icon" size={14} aria-hidden="true" />
+                  ) : null}
                   {suggestion}
                 </button>
               ))}
@@ -213,7 +304,8 @@ export default function Home() {
   const [draftMessage, setDraftMessage] = useState("");
   const [response, setResponse] = useState<CafeCopilotResponse | null>(null);
   const [error, setError] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
 
   const isBriefReady = useMemo(
     () => profile.placeHint.trim().length > 0 || profile.currentProblem.trim().length > 0,
@@ -224,33 +316,47 @@ export default function Home() {
     setProfile((current) => ({ ...current, [key]: value }));
   }
 
-  async function requestAdvice(nextMessages: ConversationMessage[]) {
+  async function requestAdvice(
+    nextMessages: ConversationMessage[],
+    actionId: string
+  ) {
     setError("");
+    setIsLoading(true);
+    setActiveAction(actionId);
 
-    const result = await fetch("/api/advice", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        profile,
-        messages: nextMessages
-      })
-    });
+    try {
+      const result = await fetch("/api/advice", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          profile,
+          messages: nextMessages
+        })
+      });
 
-    if (!result.ok) {
-      throw new Error("전략 생성에 실패했습니다.");
+      if (!result.ok) {
+        throw new Error("전략 생성에 실패했습니다.");
+      }
+
+      const nextResponse = (await result.json()) as CafeCopilotResponse;
+      setResponse(nextResponse);
+      setMessages([
+        ...nextMessages,
+        { role: "assistant", content: nextResponse.assistantMessage }
+      ]);
+    } finally {
+      setIsLoading(false);
+      setActiveAction(null);
     }
-
-    const nextResponse = (await result.json()) as CafeCopilotResponse;
-    setResponse(nextResponse);
-    setMessages([
-      ...nextMessages,
-      { role: "assistant", content: nextResponse.assistantMessage }
-    ]);
   }
 
-  function startChat(prompt?: string) {
+  async function startChat(prompt?: string, actionId = "primary") {
+    if (isLoading) {
+      return;
+    }
+
     const opening = prompt || "지금 정보로 첫 전략을 만들어줘";
     const nextMessages: ConversationMessage[] = [
       ...messages,
@@ -259,24 +365,26 @@ export default function Home() {
 
     setStep("chat");
     setMessages(nextMessages);
-    startTransition(async () => {
-      try {
-        await requestAdvice(nextMessages);
-      } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "전략 생성에 실패했습니다."
-        );
-      }
-    });
+    try {
+      await requestAdvice(nextMessages, actionId);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "전략 생성에 실패했습니다."
+      );
+    }
   }
 
-  function sendMessage(event?: FormEvent<HTMLFormElement>, shortcut?: string) {
+  async function sendMessage(
+    event?: FormEvent<HTMLFormElement>,
+    shortcut?: string,
+    actionId = "chat-submit"
+  ) {
     event?.preventDefault();
     const content = (shortcut ?? draftMessage).trim();
 
-    if (!content) {
+    if (!content || isLoading) {
       return;
     }
 
@@ -287,17 +395,15 @@ export default function Home() {
 
     setDraftMessage("");
     setMessages(nextMessages);
-    startTransition(async () => {
-      try {
-        await requestAdvice(nextMessages);
-      } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "전략 생성에 실패했습니다."
-        );
-      }
-    });
+    try {
+      await requestAdvice(nextMessages, actionId);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "전략 생성에 실패했습니다."
+      );
+    }
   }
 
   return (
@@ -379,25 +485,34 @@ export default function Home() {
           </div>
 
           <button
-            className="primary-action"
+            className={`primary-action ${activeAction === "primary" ? "is-active" : ""}`}
             type="button"
-            disabled={!isBriefReady || isPending}
-            onClick={() => startChat()}
+            disabled={!isBriefReady || isLoading}
+            onClick={() => startChat(undefined, "primary")}
           >
-            <Sparkles size={18} aria-hidden="true" />
-            {isPending ? "전략 작성 중" : "첫 전략 만들기"}
+            {activeAction === "primary" ? (
+              <LoaderCircle className="spin-icon" size={18} aria-hidden="true" />
+            ) : (
+              <Sparkles size={18} aria-hidden="true" />
+            )}
+            {activeAction === "primary" ? "전략 작성 중" : "첫 전략 만들기"}
             <ArrowRight size={18} aria-hidden="true" />
           </button>
 
           <div className="hint-stack">
-            {starterPrompts.map((prompt) => (
+            {starterPrompts.map((prompt, index) => (
               <button
                 key={prompt}
                 type="button"
-                disabled={!isBriefReady || isPending}
-                onClick={() => startChat(prompt)}
+                className={activeAction === `starter-${index}` ? "is-active" : ""}
+                disabled={!isBriefReady || isLoading}
+                onClick={() => startChat(prompt, `starter-${index}`)}
               >
-                <Zap size={15} aria-hidden="true" />
+                {activeAction === `starter-${index}` ? (
+                  <LoaderCircle className="spin-icon" size={15} aria-hidden="true" />
+                ) : (
+                  <Zap size={15} aria-hidden="true" />
+                )}
                 {prompt}
               </button>
             ))}
@@ -412,7 +527,9 @@ export default function Home() {
             </div>
             <span className="status-badge">
               <Check size={15} aria-hidden="true" />
-              {response?.mode === "gemini" ? "Gemini" : "Guided"}
+              {response?.aiUsage
+                ? `${response.aiUsage.provider === "gemini" ? "Gemini" : "Fallback"} · ${formatElapsed(response.aiUsage.elapsedMs)}`
+                : "Guided"}
             </span>
           </div>
 
@@ -423,7 +540,7 @@ export default function Home() {
                 <p>{message.content}</p>
               </div>
             ))}
-            {isPending ? (
+            {isLoading ? (
               <div className="message assistant thinking">
                 <span>Hey Mark</span>
                 <p>지도/문제/재방문 신호를 엮어 실행안으로 좁히는 중입니다.</p>
@@ -439,8 +556,16 @@ export default function Home() {
               onChange={(event) => setDraftMessage(event.target.value)}
               placeholder="예: 예산은 거의 없고 오후 2-5시가 가장 비어요"
             />
-            <button type="submit" disabled={isPending || !draftMessage.trim()}>
-              <Send size={18} aria-hidden="true" />
+            <button
+              type="submit"
+              className={activeAction === "chat-submit" ? "is-active" : ""}
+              disabled={isLoading || !draftMessage.trim()}
+            >
+              {activeAction === "chat-submit" ? (
+                <LoaderCircle className="spin-icon" size={18} aria-hidden="true" />
+              ) : (
+                <Send size={18} aria-hidden="true" />
+              )}
             </button>
           </form>
         </section>
@@ -449,7 +574,11 @@ export default function Home() {
       {response ? (
         <ArtifactView
           response={response}
-          onShortcut={(value) => sendMessage(undefined, value)}
+          disabled={isLoading}
+          activeAction={activeAction}
+          onShortcut={(value, actionId) =>
+            sendMessage(undefined, value, actionId)
+          }
         />
       ) : (
         <section className="empty-artifact">
