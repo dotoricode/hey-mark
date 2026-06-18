@@ -5,4 +5,5 @@ Hey Mark is a planned lightweight AI marketing advisor that gives grounded, prac
 The current repository contains the first implementation plan:
 
 - [Marketing AI Service Plan](docs/marketing-ai-service-plan.md)
-
+- [Knowledge Base Assessment](docs/knowledge-base-assessment.md)
+- [Versioning And PR Workflow](VERSIONING.md)
