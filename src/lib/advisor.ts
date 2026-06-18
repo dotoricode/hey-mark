@@ -172,6 +172,112 @@ function extractJson(text: string) {
   return text;
 }
 
+function parseGeminiJson(text: string) {
+  const jsonText = extractJson(text);
+
+  try {
+    return JSON.parse(jsonText) as Partial<CafeCopilotResponse>;
+  } catch {
+    return JSON.parse(jsonText.replace(/[\u0000-\u001F\u007F]/g, " ")) as Partial<CafeCopilotResponse>;
+  }
+}
+
+const stringArraySchema = {
+  type: "array",
+  items: { type: "string" }
+};
+
+const cafeCopilotResponseSchema = {
+  type: "object",
+  properties: {
+    assistantMessage: { type: "string" },
+    intentShortcuts: stringArraySchema,
+    artifact: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        plainSummary: { type: "string" },
+        hiddenInsight: { type: "string" },
+        confidence: { type: "number" },
+        focus: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string" },
+              value: { type: "number" }
+            },
+            required: ["label", "value"]
+          }
+        },
+        assumedFacts: stringArraySchema,
+        questions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              label: { type: "string" },
+              reason: { type: "string" },
+              suggestions: stringArraySchema
+            },
+            required: ["id", "label", "reason", "suggestions"]
+          }
+        },
+        plays: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              oneLine: { type: "string" },
+              whyItWorks: { type: "string" },
+              steps: stringArraySchema,
+              copy: stringArraySchema,
+              metric: { type: "string" },
+              risk: { type: "string" }
+            },
+            required: [
+              "title",
+              "oneLine",
+              "whyItWorks",
+              "steps",
+              "copy",
+              "metric",
+              "risk"
+            ]
+          }
+        },
+        timeline: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string" },
+              task: { type: "string" }
+            },
+            required: ["label", "task"]
+          }
+        },
+        sourceNotes: stringArraySchema
+      },
+      required: [
+        "title",
+        "plainSummary",
+        "hiddenInsight",
+        "confidence",
+        "focus",
+        "assumedFacts",
+        "questions",
+        "plays",
+        "timeline",
+        "sourceNotes"
+      ]
+    }
+  },
+  required: ["assistantMessage", "intentShortcuts", "artifact"]
+};
+
 function asStringArray(value: unknown, fallback: string[], limit = 6) {
   if (!Array.isArray(value)) {
     return fallback;
@@ -560,7 +666,13 @@ async function requestGeminiContent(
           : {}),
         generationConfig: {
           temperature: 0.8,
-          maxOutputTokens: 4096
+          maxOutputTokens: 4096,
+          responseFormat: {
+            text: {
+              mimeType: "application/json",
+              schema: cafeCopilotResponseSchema
+            }
+          }
         }
       })
     }
@@ -619,7 +731,7 @@ async function callGemini(
     throw new Error("Gemini returned an empty response");
   }
 
-  const parsed = JSON.parse(extractJson(text)) as Partial<CafeCopilotResponse>;
+  const parsed = parseGeminiJson(text);
   const urlNotes =
     candidate?.url_context_metadata?.url_metadata?.map((item) =>
       `${item.retrieved_url ?? "URL"}: ${item.url_retrieval_status ?? "unknown"}`
