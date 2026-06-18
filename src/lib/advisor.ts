@@ -1,3 +1,5 @@
+import { marketing0Knowledge } from "@/lib/marketing0Knowledge";
+
 export type CafeBrief = {
   cafeName: string;
   region: string;
@@ -176,6 +178,7 @@ export function createCafeAdvice(input: CafeBrief): CafeAdviceResponse {
       promoDiagnosis,
       repeatSignal.implication,
       instagramDiagnosis,
+      `${marketing0Knowledge.derivedPrinciples[0].title}: ${marketing0Knowledge.derivedPrinciples[0].note}`,
       `현재 입력 기준 주요 고객은 ${brief.ageGroups}입니다. 이 고객에게는 "예쁜 카페"보다 "오늘 동선에서 들를 이유"가 먼저 보여야 합니다.`,
       `대표 메뉴는 "${brief.signatureMenu}"입니다. 이 메뉴를 단순 소개가 아니라 시간대별 방문 명분으로 재포장해야 합니다.`
     ],
@@ -284,7 +287,7 @@ export function createCafeAdvice(input: CafeBrief): CafeAdviceResponse {
     ],
     knowledgeStatus: {
       youtube:
-        "아직 곽팀장 YouTube 영상은 permissioned transcript나 검수된 knowledge card로 구축되지 않았습니다. 현재 답변은 임시 카페 전략 카드와 사용자가 입력한 맥락을 기준으로 생성됩니다.",
+        `Marketing0 분석 JSONL은 로드 가능한 일반 마케팅 관점 레이어로 충분합니다. 다만 ${marketing0Knowledge.videoCount}개 분석 중 transcript 기반 요약은 ${marketing0Knowledge.transcriptBackedCount}개이고, 카페/로컬 직접 사례는 부족합니다. 따라서 현재 답변은 이 관점 카드와 카페 임시 플레이북, 사용자가 입력한 맥락을 함께 사용합니다.`,
       externalAnalysis:
         "Instagram, Naver Map, 블로그 URL은 현재 참고 입력값으로만 사용합니다. 공식 API/허가 기반 수집이 붙기 전까지는 실제 페이지 내용을 자동 분석했다고 주장하지 않습니다."
     },
@@ -298,8 +301,8 @@ export function createCafeAdvice(input: CafeBrief): CafeAdviceResponse {
         note: "큰 할인 반복보다 재방문 조건부 오퍼, 지도 증거, 시간대 루틴화를 우선합니다."
       },
       {
-        title: "지식베이스 상태",
-        note: "곽팀장 영상 기반 RAG는 아직 미구축입니다. 다음 단계에서 허가/검수된 knowledge card로 추가해야 합니다."
+        title: "Marketing0 파생 지식 상태",
+        note: "일반 마케팅 관점은 사용 가능하지만, 카페 전용 실행 지식은 별도 보강이 필요합니다."
       }
     ]
   };

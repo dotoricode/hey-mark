@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowRight, ClipboardList, MapPin, Sparkles } from "lucide-react";
+import { ArrowRight, BarChart3, ClipboardList, Database, Sparkles } from "lucide-react";
 import { useState } from "react";
 import type { CafeAdviceResponse, CafeBrief } from "@/lib/advisor";
+import { marketing0Knowledge } from "@/lib/marketing0Knowledge";
 
 const initialForm: CafeBrief = {
   cafeName: "브리즈 커피",
@@ -25,7 +26,7 @@ const initialForm: CafeBrief = {
   budgetLevel: "중간"
 };
 
-const fieldGroups: Array<{
+const strips: Array<{
   title: string;
   fields: Array<{
     key: keyof CafeBrief;
@@ -35,38 +36,43 @@ const fieldGroups: Array<{
   }>;
 }> = [
   {
-    title: "매장 기본",
+    title: "매장",
     fields: [
       { key: "cafeName", label: "카페명" },
       { key: "region", label: "지역/상권" },
+      { key: "cafeSize", label: "규모" },
+      { key: "openingStatus", label: "오픈 상태" }
+    ]
+  },
+  {
+    title: "상권",
+    fields: [
       { key: "nearbyContext", label: "주변 환경", type: "textarea" },
-      { key: "cafeSize", label: "카페 규모" }
-    ]
-  },
-  {
-    title: "고객과 메뉴",
-    fields: [
-      { key: "ageGroups", label: "주요 연령층/고객" },
       { key: "populationNotes", label: "방문 인구 힌트", type: "textarea" },
+      { key: "ageGroups", label: "주요 고객" }
+    ]
+  },
+  {
+    title: "메뉴",
+    fields: [
       { key: "signatureMenu", label: "대표 메뉴" },
-      { key: "priceRange", label: "가격대" }
+      { key: "priceRange", label: "가격대" },
+      { key: "repeatRate", label: "재방문율" }
     ]
   },
   {
-    title: "온라인 정보",
+    title: "채널",
     fields: [
-      { key: "instagramHandle", label: "인스타그램 아이디" },
-      { key: "naverMapUrl", label: "네이버지도 정보" },
-      { key: "blogUrls", label: "관련 블로그 글", type: "textarea" }
+      { key: "instagramHandle", label: "인스타그램" },
+      { key: "naverMapUrl", label: "네이버지도" },
+      { key: "blogUrls", label: "블로그", type: "textarea" }
     ]
   },
   {
-    title: "현재 상황",
+    title: "문제",
     fields: [
-      { key: "openingStatus", label: "오픈 상태" },
       { key: "currentProblem", label: "현재 문제", type: "textarea" },
       { key: "promoHistory", label: "이전 행사/반응", type: "textarea" },
-      { key: "repeatRate", label: "재방문율" },
       { key: "goal", label: "목표" },
       {
         key: "budgetLevel",
@@ -109,228 +115,197 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">H</div>
-          <span>Hey Mark</span>
+    <main className="strip-shell">
+      <section className="hero-strip">
+        <div>
+          <div className="brand">
+            <div className="brand-mark">H</div>
+            <span>Hey Mark</span>
+          </div>
+          <h1>카페 사장을 위한 마케팅 대시보드</h1>
+          <p>가오픈 반응, 재방문율, 지역 상권, 메뉴, 온라인 채널을 한 줄씩 읽고 바로 실행할 플레이를 만듭니다.</p>
         </div>
-        <div className="brief-list">
-          <div className="brief-item">
-            <strong>카페 전용</strong>
-            <span>지역, 메뉴, 재방문율, 오픈 행사 반응을 먼저 해석합니다.</span>
-          </div>
-          <div className="brief-item">
-            <strong>실행 중심</strong>
-            <span>큰 말보다 14일 안에 해볼 수 있는 플레이를 제안합니다.</span>
-          </div>
-          <div className="brief-item">
-            <strong>정직한 근거</strong>
-            <span>외부 페이지와 유튜브 지식베이스의 현재 상태를 구분합니다.</span>
-          </div>
+        <button className="submit hero-action" onClick={submitAdvice} disabled={isLoading}>
+          <Sparkles size={18} aria-hidden="true" />
+          {isLoading ? "분석 중" : "전략 생성"}
+          <ArrowRight size={18} aria-hidden="true" />
+        </button>
+      </section>
+
+      <section className="metric-strip">
+        <div className="metric-tile">
+          <Database size={18} aria-hidden="true" />
+          <strong>{marketing0Knowledge.videoCount}개</strong>
+          <span>Marketing0 분석</span>
         </div>
-      </aside>
+        <div className="metric-tile">
+          <BarChart3 size={18} aria-hidden="true" />
+          <strong>{marketing0Knowledge.transcriptBackedCount}개</strong>
+          <span>transcript 기반 요약</span>
+        </div>
+        <div className="metric-tile wide">
+          <span>판단</span>
+          <strong>LLM은 지금 필수 아님</strong>
+          <span>현재 MVP는 규칙+지식카드로 충분, 개인화 합성부터 LLM 권장</span>
+        </div>
+      </section>
 
-      <section className="main">
-        <div className="workspace">
-          <div className="topbar">
-            <div className="title">
-              <h1>Hey Mark</h1>
-              <p>카페 사장을 위한 동네 상권 마케팅 전략 워크스페이스.</p>
-            </div>
-            <div className="status-pill" aria-label="Service status">
-              <span className="status-dot" />
-              카페 전략 모드
+      <section className="notice-strip">
+        원본 JSONL은 public repo에 넣지 않습니다. 현재 앱은 분석된 관점 카드와 카페 플레이북을 사용하며,
+        인스타그램/네이버지도/블로그는 입력값으로만 참고합니다.
+      </section>
+
+      <section className="input-strips">
+        {strips.map((strip) => (
+          <div className="data-strip" key={strip.title}>
+            <div className="strip-label">{strip.title}</div>
+            <div className="strip-fields">
+              {strip.fields.map((field) => (
+                <label className="strip-field" key={field.key} htmlFor={field.key}>
+                  <span>{field.label}</span>
+                  {field.type === "textarea" ? (
+                    <textarea
+                      id={field.key}
+                      value={form[field.key]}
+                      onChange={(event) => updateField(field.key, event.target.value)}
+                    />
+                  ) : field.type === "select" ? (
+                    <select
+                      id={field.key}
+                      value={form[field.key]}
+                      onChange={(event) => updateField(field.key, event.target.value)}
+                    >
+                      {field.options?.map((option) => (
+                        <option key={option}>{option}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id={field.key}
+                      value={form[field.key]}
+                      onChange={(event) => updateField(field.key, event.target.value)}
+                    />
+                  )}
+                </label>
+              ))}
             </div>
           </div>
+        ))}
+      </section>
 
-          <div className="notice">
-            <MapPin size={18} aria-hidden="true" />
-            <span>
-              현재 버전은 입력한 정보 기준으로 전략을 만듭니다. 인스타그램, 네이버지도,
-              블로그, 곽팀장 유튜브는 아직 자동 수집/학습하지 않습니다.
-            </span>
+      <section className="result-strip" aria-live="polite">
+        {!advice ? (
+          <div className="empty-strip">
+            <ClipboardList size={30} aria-hidden="true" />
+            <span>전략 생성 버튼을 누르면 strip 형태의 실행 대시보드가 표시됩니다.</span>
           </div>
+        ) : (
+          <div className="result-stack">
+            <div className="insight-strip emphasis">
+              <div className="strip-label">진단</div>
+              <p>{advice.diagnosis}</p>
+            </div>
 
-          <div className="grid cafe-grid">
-            <section className="panel">
-              <div className="panel-header">
-                <h2>카페 브리프</h2>
-              </div>
-              <div className="form">
-                {fieldGroups.map((group) => (
-                  <div className="form-group" key={group.title}>
-                    <h3>{group.title}</h3>
-                    {group.fields.map((field) => (
-                      <div className="field" key={field.key}>
-                        <label htmlFor={field.key}>{field.label}</label>
-                        {field.type === "textarea" ? (
-                          <textarea
-                            id={field.key}
-                            value={form[field.key]}
-                            onChange={(event) => updateField(field.key, event.target.value)}
-                          />
-                        ) : field.type === "select" ? (
-                          <select
-                            id={field.key}
-                            value={form[field.key]}
-                            onChange={(event) => updateField(field.key, event.target.value)}
-                          >
-                            {field.options?.map((option) => (
-                              <option key={option}>{option}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            id={field.key}
-                            value={form[field.key]}
-                            onChange={(event) => updateField(field.key, event.target.value)}
-                          />
-                        )}
-                      </div>
+            <div className="insight-strip">
+              <div className="strip-label">해석</div>
+              <ul className="strip-list">
+                {advice.strategicRead.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="insight-strip decision-strip">
+              <div className="strip-label">결정</div>
+              <p>{advice.immediateDecision}</p>
+            </div>
+
+            {advice.plays.map((play) => (
+              <article className="play-strip" key={play.name}>
+                <div className="strip-label">{play.name}</div>
+                <div className="play-body">
+                  <p>{play.why}</p>
+                  <div className="offer-line">{play.offer}</div>
+                  <ol className="strip-list">
+                    {play.actions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ol>
+                  <div className="copy-row">
+                    {play.copy.map((line) => (
+                      <span key={line}>{line}</span>
                     ))}
                   </div>
-                ))}
+                  <div className="metric-line">측정: {play.metric}</div>
+                </div>
+              </article>
+            ))}
 
-                <button className="submit" onClick={submitAdvice} disabled={isLoading}>
-                  <Sparkles size={18} aria-hidden="true" />
-                  {isLoading ? "분석 중" : "카페 전략 생성"}
-                  <ArrowRight size={18} aria-hidden="true" />
-                </button>
+            <div className="insight-strip split-strip">
+              <div>
+                <div className="strip-label">14일</div>
+                <ol className="strip-list">
+                  {advice.fourteenDayPlan.map((item) => (
+                    <li key={item.day}>
+                      <strong>{item.day}</strong> {item.task}
+                    </li>
+                  ))}
+                </ol>
               </div>
-            </section>
+              <div>
+                <div className="strip-label">측정</div>
+                <ul className="strip-list">
+                  {advice.measurement.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
 
-            <section className="panel output" aria-live="polite">
-              {!advice ? (
-                <div className="empty">
-                  <div>
-                    <ClipboardList size={34} aria-hidden="true" />
-                    <p>카페 상황을 바탕으로 플레이북이 표시됩니다.</p>
-                  </div>
+            <div className="insight-strip split-strip">
+              <div>
+                <div className="strip-label">상권</div>
+                <ul className="strip-list">
+                  {advice.localAnalysis.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <div className="strip-label">부족 데이터</div>
+                <ul className="strip-list">
+                  {advice.dataGaps.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="insight-strip">
+              <div className="strip-label">콘텐츠</div>
+              <div className="copy-row">
+                {advice.contentIdeas.map((idea) => (
+                  <span key={idea}>{idea}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="insight-strip source-strip">
+              <div className="strip-label">근거</div>
+              <div>
+                <p>{advice.knowledgeStatus.youtube}</p>
+                <p>{advice.knowledgeStatus.externalAnalysis}</p>
+                <div className="source-row">
+                  {advice.sources.map((source) => (
+                    <span key={source.title}>
+                      <strong>{source.title}</strong> {source.note}
+                    </span>
+                  ))}
                 </div>
-              ) : (
-                <div className="advice">
-                  <div className="diagnosis">
-                    <h3>진단</h3>
-                    <p>{advice.diagnosis}</p>
-                  </div>
-
-                  <div className="section">
-                    <h3>전략 해석</h3>
-                    <ul className="plain-list">
-                      {advice.strategicRead.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="section decision">
-                    <h3>지금 할 결정</h3>
-                    <p>{advice.immediateDecision}</p>
-                  </div>
-
-                  <div className="section">
-                    <h3>마케팅 플레이</h3>
-                    <div className="playbook">
-                      {advice.plays.map((play) => (
-                        <article className="play" key={play.name}>
-                          <h4>{play.name}</h4>
-                          <p>{play.why}</p>
-                          <strong>오퍼</strong>
-                          <p>{play.offer}</p>
-                          <strong>실행</strong>
-                          <ol className="action-list">
-                            {play.actions.map((action) => (
-                              <li key={action}>{action}</li>
-                            ))}
-                          </ol>
-                          <strong>카피</strong>
-                          <div className="copy-grid">
-                            {play.copy.map((line) => (
-                              <div className="copy-line" key={line}>
-                                {line}
-                              </div>
-                            ))}
-                          </div>
-                          <span className="metric">측정: {play.metric}</span>
-                        </article>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="section two-column">
-                    <div>
-                      <h3>14일 실행계획</h3>
-                      <ol className="action-list">
-                        {advice.fourteenDayPlan.map((item) => (
-                          <li key={item.day}>
-                            <strong>{item.day}</strong> {item.task}
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                    <div>
-                      <h3>지역/채널 해석</h3>
-                      <ul className="plain-list">
-                        {advice.localAnalysis.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="section">
-                    <h3>콘텐츠 아이디어</h3>
-                    <div className="chips">
-                      {advice.contentIdeas.map((idea) => (
-                        <span className="chip" key={idea}>
-                          {idea}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="section two-column">
-                    <div>
-                      <h3>측정</h3>
-                      <ul className="plain-list">
-                        {advice.measurement.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div>
-                      <h3>더 있으면 좋은 데이터</h3>
-                      <ul className="plain-list">
-                        {advice.dataGaps.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="section source-status">
-                    <h3>지식베이스 상태</h3>
-                    <p>{advice.knowledgeStatus.youtube}</p>
-                    <p>{advice.knowledgeStatus.externalAnalysis}</p>
-                  </div>
-
-                  <div className="section">
-                    <h3>근거</h3>
-                    <div className="sources">
-                      {advice.sources.map((source) => (
-                        <div className="source" key={source.title}>
-                          <strong>{source.title}</strong>
-                          <span>{source.note}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </section>
     </main>
   );
