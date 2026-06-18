@@ -540,7 +540,8 @@ function errorMessage(error: unknown) {
 async function requestGeminiContent(
   profile: CafeProfile,
   messages: ConversationMessage[],
-  useTools: boolean
+  useTools: boolean,
+  useJsonMode: boolean
 ) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -570,14 +571,20 @@ async function requestGeminiContent(
           : {}),
         generationConfig: {
           temperature: 0.8,
-          maxOutputTokens: 4096
+          maxOutputTokens: 4096,
+          ...(useJsonMode ? { response_mime_type: "application/json" } : {})
         }
       })
     }
   );
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed with ${response.status}`);
+    const errorBody = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
+    throw new Error(
+      `Gemini request failed with ${response.status}${
+        errorBody ? `: ${errorBody}` : ""
+      }`
+    );
   }
 
   return (await response.json()) as {
@@ -593,32 +600,11 @@ async function requestGeminiContent(
   };
 }
 
-async function callGemini(
-  profile: CafeProfile,
-  messages: ConversationMessage[],
-  fallback: StrategyArtifact
+function readGeminiResult(
+  data: Awaited<ReturnType<typeof requestGeminiContent>>,
+  fallback: StrategyArtifact,
+  notes: string[]
 ) {
-  if (!process.env.GEMINI_API_KEY) {
-    return {
-      ok: false as const,
-      reason:
-        "GEMINI_API_KEY was not available in the server environment at request time."
-    };
-  }
-
-  let data: Awaited<ReturnType<typeof requestGeminiContent>>;
-  const notes: string[] = [];
-
-  try {
-    data = await requestGeminiContent(profile, messages, true);
-  } catch (toolError) {
-    notes.push(
-      `Gemini URL/Search tool attempt failed: ${errorMessage(toolError)}`
-    );
-    data = await requestGeminiContent(profile, messages, false);
-    notes.push("Retried Gemini without URL/Search tools.");
-  }
-
   const candidate = data.candidates?.[0];
   const text = candidate?.content?.parts
     ?.map((part) => part.text ?? "")
@@ -650,6 +636,44 @@ async function callGemini(
     artifact: normalizeArtifact(parsed.artifact, fallback),
     retrievalNotes: [...notes, ...urlNotes]
   };
+}
+
+async function callGemini(
+  profile: CafeProfile,
+  messages: ConversationMessage[],
+  fallback: StrategyArtifact
+) {
+  if (!process.env.GEMINI_API_KEY) {
+    return {
+      ok: false as const,
+      reason:
+        "GEMINI_API_KEY was not available in the server environment at request time."
+    };
+  }
+
+  const notes: string[] = [];
+  const attempts = [
+    { label: "URL/Search tools with JSON MIME", useTools: true, useJsonMode: true },
+    { label: "JSON MIME without URL/Search tools", useTools: false, useJsonMode: true },
+    { label: "plain Gemini generation", useTools: false, useJsonMode: false }
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const data = await requestGeminiContent(
+        profile,
+        messages,
+        attempt.useTools,
+        attempt.useJsonMode
+      );
+
+      return readGeminiResult(data, fallback, notes);
+    } catch (attemptError) {
+      notes.push(`${attempt.label} failed: ${errorMessage(attemptError)}`);
+    }
+  }
+
+  throw new Error(notes.join(" | "));
 }
 
 export async function createCafeCopilotResponse(
