@@ -523,18 +523,21 @@ function buildPrompt(profile: CafeProfile, messages: ConversationMessage[]) {
   ].join("\n");
 }
 
-async function callGemini(
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function requestGeminiContent(
   profile: CafeProfile,
   messages: ConversationMessage[],
-  fallback: StrategyArtifact
+  useTools: boolean
 ) {
   const apiKey = process.env.GEMINI_API_KEY;
-
   if (!apiKey) {
-    return null;
+    throw new Error("GEMINI_API_KEY is not configured");
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -552,7 +555,9 @@ async function callGemini(
             parts: [{ text: buildPrompt(profile, messages) }]
           }
         ],
-        tools: [{ url_context: {} }, { google_search: {} }],
+        ...(useTools
+          ? { tools: [{ url_context: {} }, { google_search: {} }] }
+          : {}),
         generationConfig: {
           temperature: 0.8,
           maxOutputTokens: 4096
@@ -565,7 +570,7 @@ async function callGemini(
     throw new Error(`Gemini request failed with ${response.status}`);
   }
 
-  const data = (await response.json()) as {
+  return (await response.json()) as {
     candidates?: Array<{
       content?: { parts?: Array<{ text?: string }> };
       url_context_metadata?: {
@@ -576,6 +581,34 @@ async function callGemini(
       };
     }>;
   };
+}
+
+async function callGemini(
+  profile: CafeProfile,
+  messages: ConversationMessage[],
+  fallback: StrategyArtifact
+) {
+  if (!process.env.GEMINI_API_KEY) {
+    return {
+      ok: false as const,
+      reason:
+        "GEMINI_API_KEY was not available in the server environment at request time."
+    };
+  }
+
+  let data: Awaited<ReturnType<typeof requestGeminiContent>>;
+  const notes: string[] = [];
+
+  try {
+    data = await requestGeminiContent(profile, messages, true);
+  } catch (toolError) {
+    notes.push(
+      `Gemini URL/Search tool attempt failed: ${errorMessage(toolError)}`
+    );
+    data = await requestGeminiContent(profile, messages, false);
+    notes.push("Retried Gemini without URL/Search tools.");
+  }
+
   const candidate = data.candidates?.[0];
   const text = candidate?.content?.parts
     ?.map((part) => part.text ?? "")
@@ -593,6 +626,7 @@ async function callGemini(
     ) ?? [];
 
   return {
+    ok: true as const,
     assistantMessage: cleanText(
       parsed.assistantMessage,
       "좋아요. 지금 정보만으로도 첫 실행안을 만들고, 부족한 부분은 질문으로 좁혀볼게요.",
@@ -604,7 +638,7 @@ async function callGemini(
       "인스타/네이버 문구를 더 써줘"
     ]),
     artifact: normalizeArtifact(parsed.artifact, fallback),
-    retrievalNotes: urlNotes
+    retrievalNotes: [...notes, ...urlNotes]
   };
 }
 
@@ -619,7 +653,7 @@ export async function createCafeCopilotResponse(
   try {
     const gemini = await callGemini(request.profile, request.messages, fallback);
 
-    if (gemini) {
+    if (gemini.ok) {
       return {
         mode: "gemini",
         assistantMessage: gemini.assistantMessage,
@@ -628,23 +662,39 @@ export async function createCafeCopilotResponse(
         retrievalNotes: gemini.retrievalNotes
       };
     }
+
+    return {
+      mode: "fallback",
+      assistantMessage:
+        "지금은 Gemini가 서버에서 연결되지 않아 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
+      intentShortcuts: [
+        "가장 먼저 할 일만 보여줘",
+        "돈 안 쓰는 방식으로 바꿔줘",
+        "인스타/네이버 문구를 더 써줘"
+      ],
+      artifact: fallback,
+      retrievalNotes: [
+        gemini.reason,
+        "Set GEMINI_API_KEY in the deployment environment and redeploy if this appears in production."
+      ]
+    };
   } catch (error) {
     console.error(error);
-  }
 
-  return {
-    mode: "fallback",
-    assistantMessage:
-      "지금은 Gemini 키가 없거나 호출이 실패해서 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
-    intentShortcuts: [
-      "가장 먼저 할 일만 보여줘",
-      "돈 안 쓰는 방식으로 바꿔줘",
-      "인스타/네이버 문구를 더 써줘"
-    ],
-    artifact: fallback,
-    retrievalNotes: [
-      "Gemini API가 연결되면 제공된 URL에 대해 URL context 검색을 시도합니다.",
-      "현재 fallback은 외부 페이지를 직접 읽었다고 주장하지 않습니다."
-    ]
-  };
+    return {
+      mode: "fallback",
+      assistantMessage:
+        "Gemini 호출이 실패해 기본 플레이북으로 먼저 답할게요. 배포 환경의 진단 메모를 확인하면 원인을 좁힐 수 있습니다.",
+      intentShortcuts: [
+        "가장 먼저 할 일만 보여줘",
+        "돈 안 쓰는 방식으로 바꿔줘",
+        "인스타/네이버 문구를 더 써줘"
+      ],
+      artifact: fallback,
+      retrievalNotes: [
+        `Gemini fallback reason: ${errorMessage(error)}`,
+        "If the key is present, check GEMINI_MODEL access and whether built-in URL/Search tools are enabled for the selected model."
+      ]
+    };
+  }
 }

@@ -4,6 +4,14 @@ All notable changes to Hey Mark are tracked here.
 
 This project starts versioning at `v0.0.1` and follows Semantic Versioning.
 
+## [0.1.1] - 2026-06-18
+
+### Fixed
+
+- Changed the default Gemini model to `gemini-2.5-flash` for broader API key compatibility.
+- Added safe fallback diagnostics when Gemini is unavailable in production.
+- Retried Gemini generation without URL/Search tools when tool-enabled calls fail.
+
 ## [0.1.0] - 2026-06-18
 
 ### Added
