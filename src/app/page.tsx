@@ -1,312 +1,462 @@
 "use client";
 
-import { ArrowRight, BarChart3, ClipboardList, Database, Sparkles } from "lucide-react";
-import { useState } from "react";
-import type { CafeAdviceResponse, CafeBrief } from "@/lib/advisor";
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  ChevronRight,
+  MapPin,
+  MessageCircleQuestion,
+  Send,
+  Sparkles,
+  Store,
+  Zap
+} from "lucide-react";
+import { FormEvent, useMemo, useState, useTransition } from "react";
+import type {
+  CafeCopilotResponse,
+  CafeProfile,
+  ConversationMessage,
+  StrategyArtifact
+} from "@/lib/advisor";
 import { marketing0Knowledge } from "@/lib/marketing0Knowledge";
 
-const initialForm: CafeBrief = {
-  cafeName: "브리즈 커피",
-  region: "동네 주거 상권",
-  nearbyContext: "근처에 아파트, 학교, 작은 사무실이 있고 오전~낮 유동 인구가 있음",
-  populationNotes: "가오픈 때 아침부터 많은 인원이 방문했음. 방문 가능 인구는 확인됨",
-  ageGroups: "오전~낮 시간을 활용하는 동네 주민, 학생, 근처 직장인",
-  cafeSize: "소형 카페, 좌석 수가 많지는 않음",
-  signatureMenu: "시그니처 브리즈와 빵",
-  priceRange: "중간 가격대",
-  openingStatus: "정식 오픈 초기",
-  instagramHandle: "@breeze_coffee",
-  naverMapUrl: "네이버지도 URL 또는 업체명",
-  blogUrls: "관련 블로그 글 URL이 있으면 줄바꿈으로 입력",
+const starterProfile: CafeProfile = {
+  placeHint: "",
   currentProblem:
-    "인스타그램 관심도 적고, 가오픈 때는 커피사면 디저트 2개 주는 행사로 많은 인원이 방문했지만 실제 오픈 이후 방문율이 떨어짐",
-  promoHistory: "가오픈 때 커피 구매 시 디저트 2개 증정. 아침부터 방문자가 많았음",
-  repeatRate: "30-40%",
-  goal: "평일 오전, 오후 방문 증가",
-  budgetLevel: "중간"
+    "가오픈 때는 커피를 사면 디저트 2개를 주는 행사로 아침부터 많이 방문했지만, 정식 오픈 이후 방문율이 떨어졌습니다.",
+  goal: "평일 오전과 낮 방문을 늘리고 싶습니다.",
+  knownSignals: "재방문 고객은 30-40% 정도입니다. 인스타그램 관심도는 낮습니다."
 };
 
-const strips: Array<{
-  title: string;
-  fields: Array<{
-    key: keyof CafeBrief;
-    label: string;
-    type?: "input" | "textarea" | "select";
-    options?: string[];
-  }>;
-}> = [
-  {
-    title: "매장",
-    fields: [
-      { key: "cafeName", label: "카페명" },
-      { key: "region", label: "지역/상권" },
-      { key: "cafeSize", label: "규모" },
-      { key: "openingStatus", label: "오픈 상태" }
-    ]
-  },
-  {
-    title: "상권",
-    fields: [
-      { key: "nearbyContext", label: "주변 환경", type: "textarea" },
-      { key: "populationNotes", label: "방문 인구 힌트", type: "textarea" },
-      { key: "ageGroups", label: "주요 고객" }
-    ]
-  },
-  {
-    title: "메뉴",
-    fields: [
-      { key: "signatureMenu", label: "대표 메뉴" },
-      { key: "priceRange", label: "가격대" },
-      { key: "repeatRate", label: "재방문율" }
-    ]
-  },
-  {
-    title: "채널",
-    fields: [
-      { key: "instagramHandle", label: "인스타그램" },
-      { key: "naverMapUrl", label: "네이버지도" },
-      { key: "blogUrls", label: "블로그", type: "textarea" }
-    ]
-  },
-  {
-    title: "문제",
-    fields: [
-      { key: "currentProblem", label: "현재 문제", type: "textarea" },
-      { key: "promoHistory", label: "이전 행사/반응", type: "textarea" },
-      { key: "goal", label: "목표" },
-      {
-        key: "budgetLevel",
-        label: "예산",
-        type: "select",
-        options: ["없음", "소액", "중간", "큼"]
-      }
-    ]
-  }
+const starterPrompts = [
+  "가장 먼저 실행할 1개 아이디어로 좁혀줘",
+  "큰 할인 없이 다시 오게 만드는 방법이 필요해",
+  "네이버지도 링크를 기준으로 부족한 정보를 물어봐줘"
 ];
 
-export default function Home() {
-  const [form, setForm] = useState<CafeBrief>(initialForm);
-  const [advice, setAdvice] = useState<CafeAdviceResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+type Step = "brief" | "chat";
 
-  async function submitAdvice() {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/advice", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(form)
-      });
-
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      setAdvice((await response.json()) as CafeAdviceResponse);
-    } finally {
-      setIsLoading(false);
-    }
+function confidenceLabel(value: number) {
+  if (value >= 75) {
+    return "바로 실험 가능";
   }
 
-  function updateField(key: keyof CafeBrief, value: string) {
-    setForm((current) => ({ ...current, [key]: value }));
+  if (value >= 55) {
+    return "질문 후 정확도 상승";
+  }
+
+  return "정보 보강 필요";
+}
+
+function ProgressRing({ value }: { value: number }) {
+  return (
+    <div
+      className="progress-ring"
+      style={{ "--progress": `${Math.max(0, Math.min(100, value))}%` } as React.CSSProperties}
+      aria-label={`전략 확신도 ${value}%`}
+    >
+      <span>{value}</span>
+      <small>%</small>
+    </div>
+  );
+}
+
+function FocusBars({ artifact }: { artifact: StrategyArtifact }) {
+  return (
+    <div className="focus-bars">
+      {artifact.focus.map((item) => (
+        <div className="focus-row" key={item.label}>
+          <div>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </div>
+          <div className="bar-track" aria-hidden="true">
+            <span style={{ width: `${item.value}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ArtifactView({
+  response,
+  onShortcut
+}: {
+  response: CafeCopilotResponse;
+  onShortcut: (value: string) => void;
+}) {
+  const artifact = response.artifact;
+
+  return (
+    <section className="artifact-panel" aria-live="polite">
+      <div className="artifact-top">
+        <div>
+          <span className="eyebrow">전략 초안</span>
+          <h2>{artifact.title}</h2>
+          <p>{artifact.plainSummary}</p>
+        </div>
+        <div className="confidence-card">
+          <ProgressRing value={artifact.confidence} />
+          <strong>{confidenceLabel(artifact.confidence)}</strong>
+          <span>{response.mode === "gemini" ? "Gemini 연결" : "기본 플레이북"}</span>
+        </div>
+      </div>
+
+      <div className="insight-band">
+        <Sparkles size={18} aria-hidden="true" />
+        <p>{artifact.hiddenInsight}</p>
+      </div>
+
+      <FocusBars artifact={artifact} />
+
+      <div className="shortcut-row">
+        {response.intentShortcuts.map((shortcut) => (
+          <button key={shortcut} type="button" onClick={() => onShortcut(shortcut)}>
+            {shortcut}
+            <ChevronRight size={16} aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+
+      <div className="question-grid">
+        {artifact.questions.map((question) => (
+          <article className="question-card" key={question.id}>
+            <MessageCircleQuestion size={18} aria-hidden="true" />
+            <h3>{question.label}</h3>
+            <p>{question.reason}</p>
+            <div className="option-row">
+              {question.suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => onShortcut(`${question.label}: ${suggestion}`)}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="play-stack">
+        {artifact.plays.map((play, index) => (
+          <article className="play-card" key={play.title}>
+            <div className="play-index">{index + 1}</div>
+            <div>
+              <span className="eyebrow">실행안</span>
+              <h3>{play.title}</h3>
+              <p className="one-line">{play.oneLine}</p>
+              <p>{play.whyItWorks}</p>
+              <ol>
+                {play.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <div className="copy-list">
+                {play.copy.map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </div>
+              <div className="metric-row">
+                <span>측정</span>
+                <strong>{play.metric}</strong>
+              </div>
+              <div className="risk-row">
+                <span>주의</span>
+                <strong>{play.risk}</strong>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="timeline">
+        {artifact.timeline.map((item) => (
+          <div className="timeline-item" key={item.label}>
+            <span>{item.label}</span>
+            <p>{item.task}</p>
+          </div>
+        ))}
+      </div>
+
+      <details className="source-details">
+        <summary>근거와 한계</summary>
+        <ul>
+          {artifact.assumedFacts.map((fact) => (
+            <li key={fact}>{fact}</li>
+          ))}
+          {artifact.sourceNotes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+          {response.retrievalNotes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  );
+}
+
+export default function Home() {
+  const [step, setStep] = useState<Step>("brief");
+  const [profile, setProfile] = useState<CafeProfile>(starterProfile);
+  const [messages, setMessages] = useState<ConversationMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "네이버지도 링크나 카페명, 지금 가장 답답한 문제만 알려주세요. 부족한 정보는 제가 다음 질문으로 좁혀볼게요."
+    }
+  ]);
+  const [draftMessage, setDraftMessage] = useState("");
+  const [response, setResponse] = useState<CafeCopilotResponse | null>(null);
+  const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  const isBriefReady = useMemo(
+    () => profile.placeHint.trim().length > 0 || profile.currentProblem.trim().length > 0,
+    [profile.currentProblem, profile.placeHint]
+  );
+
+  function updateProfile(key: keyof CafeProfile, value: string) {
+    setProfile((current) => ({ ...current, [key]: value }));
+  }
+
+  async function requestAdvice(nextMessages: ConversationMessage[]) {
+    setError("");
+
+    const result = await fetch("/api/advice", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        profile,
+        messages: nextMessages
+      })
+    });
+
+    if (!result.ok) {
+      throw new Error("전략 생성에 실패했습니다.");
+    }
+
+    const nextResponse = (await result.json()) as CafeCopilotResponse;
+    setResponse(nextResponse);
+    setMessages([
+      ...nextMessages,
+      { role: "assistant", content: nextResponse.assistantMessage }
+    ]);
+  }
+
+  function startChat(prompt?: string) {
+    const opening = prompt || "지금 정보로 첫 전략을 만들어줘";
+    const nextMessages: ConversationMessage[] = [
+      ...messages,
+      { role: "user", content: opening }
+    ];
+
+    setStep("chat");
+    setMessages(nextMessages);
+    startTransition(async () => {
+      try {
+        await requestAdvice(nextMessages);
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "전략 생성에 실패했습니다."
+        );
+      }
+    });
+  }
+
+  function sendMessage(event?: FormEvent<HTMLFormElement>, shortcut?: string) {
+    event?.preventDefault();
+    const content = (shortcut ?? draftMessage).trim();
+
+    if (!content) {
+      return;
+    }
+
+    const nextMessages: ConversationMessage[] = [
+      ...messages,
+      { role: "user", content }
+    ];
+
+    setDraftMessage("");
+    setMessages(nextMessages);
+    startTransition(async () => {
+      try {
+        await requestAdvice(nextMessages);
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "전략 생성에 실패했습니다."
+        );
+      }
+    });
   }
 
   return (
-    <main className="strip-shell">
-      <section className="hero-strip">
-        <div>
-          <div className="brand">
-            <div className="brand-mark">H</div>
-            <span>Hey Mark</span>
-          </div>
-          <h1>카페 사장을 위한 마케팅 대시보드</h1>
-          <p>가오픈 반응, 재방문율, 지역 상권, 메뉴, 온라인 채널을 한 줄씩 읽고 바로 실행할 플레이를 만듭니다.</p>
+    <main className="copilot-shell">
+      <section className="app-hero">
+        <div className="brand">
+          <div className="brand-mark">H</div>
+          <span>Hey Mark</span>
         </div>
-        <button className="submit hero-action" onClick={submitAdvice} disabled={isLoading}>
-          <Sparkles size={18} aria-hidden="true" />
-          {isLoading ? "분석 중" : "전략 생성"}
-          <ArrowRight size={18} aria-hidden="true" />
-        </button>
-      </section>
-
-      <section className="metric-strip">
-        <div className="metric-tile">
-          <Database size={18} aria-hidden="true" />
-          <strong>{marketing0Knowledge.videoCount}개</strong>
-          <span>Marketing0 분석</span>
+        <div className="hero-copy">
+          <span className="eyebrow">Cafe Marketing Copilot</span>
+          <h1>질문은 줄이고, 바로 써먹을 카페 마케팅 아이디어로 좁힙니다.</h1>
+          <p>
+            지도 링크와 지금 문제만 넣으면, 부족한 정보는 대화 중에 다시 묻고 실행안으로
+            정리합니다.
+          </p>
         </div>
-        <div className="metric-tile">
-          <BarChart3 size={18} aria-hidden="true" />
-          <strong>{marketing0Knowledge.transcriptBackedCount}개</strong>
-          <span>transcript 기반 요약</span>
-        </div>
-        <div className="metric-tile wide">
-          <span>판단</span>
-          <strong>LLM은 지금 필수 아님</strong>
-          <span>현재 MVP는 규칙+지식카드로 충분, 개인화 합성부터 LLM 권장</span>
+        <div className="knowledge-pill">
+          <Bot size={18} aria-hidden="true" />
+          <span>{marketing0Knowledge.videoCount}개 분석 관점</span>
         </div>
       </section>
 
-      <section className="notice-strip">
-        원본 JSONL은 public repo에 넣지 않습니다. 현재 앱은 분석된 관점 카드와 카페 플레이북을 사용하며,
-        인스타그램/네이버지도/블로그는 입력값으로만 참고합니다.
-      </section>
-
-      <section className="input-strips">
-        {strips.map((strip) => (
-          <div className="data-strip" key={strip.title}>
-            <div className="strip-label">{strip.title}</div>
-            <div className="strip-fields">
-              {strip.fields.map((field) => (
-                <label className="strip-field" key={field.key} htmlFor={field.key}>
-                  <span>{field.label}</span>
-                  {field.type === "textarea" ? (
-                    <textarea
-                      id={field.key}
-                      value={form[field.key]}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                    />
-                  ) : field.type === "select" ? (
-                    <select
-                      id={field.key}
-                      value={form[field.key]}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                    >
-                      {field.options?.map((option) => (
-                        <option key={option}>{option}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      id={field.key}
-                      value={form[field.key]}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                    />
-                  )}
-                </label>
-              ))}
+      <div className="workspace-grid">
+        <aside className="brief-panel">
+          <div className="stepper">
+            <div className={step === "brief" ? "active" : ""}>
+              <span>1</span>
+              <strong>기본 정보</strong>
+            </div>
+            <div className={step === "chat" ? "active" : ""}>
+              <span>2</span>
+              <strong>대화와 전략</strong>
             </div>
           </div>
-        ))}
-      </section>
 
-      <section className="result-strip" aria-live="polite">
-        {!advice ? (
-          <div className="empty-strip">
-            <ClipboardList size={30} aria-hidden="true" />
-            <span>전략 생성 버튼을 누르면 strip 형태의 실행 대시보드가 표시됩니다.</span>
+          <label className="smart-field">
+            <span>
+              <MapPin size={16} aria-hidden="true" />
+              네이버지도 링크 또는 카페명
+            </span>
+            <input
+              value={profile.placeHint}
+              onChange={(event) => updateProfile("placeHint", event.target.value)}
+              placeholder="예: https://naver.me/... 또는 브리즈커피 성수"
+            />
+          </label>
+
+          <label className="smart-field">
+            <span>
+              <Store size={16} aria-hidden="true" />
+              지금 가장 답답한 문제
+            </span>
+            <textarea
+              value={profile.currentProblem}
+              onChange={(event) =>
+                updateProfile("currentProblem", event.target.value)
+              }
+            />
+          </label>
+
+          <div className="compact-grid">
+            <label className="smart-field">
+              <span>목표</span>
+              <input
+                value={profile.goal}
+                onChange={(event) => updateProfile("goal", event.target.value)}
+              />
+            </label>
+            <label className="smart-field">
+              <span>이미 아는 신호</span>
+              <textarea
+                value={profile.knownSignals}
+                onChange={(event) =>
+                  updateProfile("knownSignals", event.target.value)
+                }
+              />
+            </label>
           </div>
-        ) : (
-          <div className="result-stack">
-            <div className="insight-strip emphasis">
-              <div className="strip-label">진단</div>
-              <p>{advice.diagnosis}</p>
-            </div>
 
-            <div className="insight-strip">
-              <div className="strip-label">해석</div>
-              <ul className="strip-list">
-                {advice.strategicRead.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
+          <button
+            className="primary-action"
+            type="button"
+            disabled={!isBriefReady || isPending}
+            onClick={() => startChat()}
+          >
+            <Sparkles size={18} aria-hidden="true" />
+            {isPending ? "전략 작성 중" : "첫 전략 만들기"}
+            <ArrowRight size={18} aria-hidden="true" />
+          </button>
 
-            <div className="insight-strip decision-strip">
-              <div className="strip-label">결정</div>
-              <p>{advice.immediateDecision}</p>
-            </div>
-
-            {advice.plays.map((play) => (
-              <article className="play-strip" key={play.name}>
-                <div className="strip-label">{play.name}</div>
-                <div className="play-body">
-                  <p>{play.why}</p>
-                  <div className="offer-line">{play.offer}</div>
-                  <ol className="strip-list">
-                    {play.actions.map((action) => (
-                      <li key={action}>{action}</li>
-                    ))}
-                  </ol>
-                  <div className="copy-row">
-                    {play.copy.map((line) => (
-                      <span key={line}>{line}</span>
-                    ))}
-                  </div>
-                  <div className="metric-line">측정: {play.metric}</div>
-                </div>
-              </article>
+          <div className="hint-stack">
+            {starterPrompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                disabled={!isBriefReady || isPending}
+                onClick={() => startChat(prompt)}
+              >
+                <Zap size={15} aria-hidden="true" />
+                {prompt}
+              </button>
             ))}
-
-            <div className="insight-strip split-strip">
-              <div>
-                <div className="strip-label">14일</div>
-                <ol className="strip-list">
-                  {advice.fourteenDayPlan.map((item) => (
-                    <li key={item.day}>
-                      <strong>{item.day}</strong> {item.task}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-              <div>
-                <div className="strip-label">측정</div>
-                <ul className="strip-list">
-                  {advice.measurement.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            <div className="insight-strip split-strip">
-              <div>
-                <div className="strip-label">상권</div>
-                <ul className="strip-list">
-                  {advice.localAnalysis.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <div className="strip-label">부족 데이터</div>
-                <ul className="strip-list">
-                  {advice.dataGaps.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            <div className="insight-strip">
-              <div className="strip-label">콘텐츠</div>
-              <div className="copy-row">
-                {advice.contentIdeas.map((idea) => (
-                  <span key={idea}>{idea}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="insight-strip source-strip">
-              <div className="strip-label">근거</div>
-              <div>
-                <p>{advice.knowledgeStatus.youtube}</p>
-                <p>{advice.knowledgeStatus.externalAnalysis}</p>
-                <div className="source-row">
-                  {advice.sources.map((source) => (
-                    <span key={source.title}>
-                      <strong>{source.title}</strong> {source.note}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
-        )}
-      </section>
+        </aside>
+
+        <section className="chat-panel">
+          <div className="chat-header">
+            <div>
+              <span className="eyebrow">Conversation</span>
+              <h2>질문하면서 전략을 다듬는 공간</h2>
+            </div>
+            <span className="status-badge">
+              <Check size={15} aria-hidden="true" />
+              {response?.mode === "gemini" ? "Gemini" : "Guided"}
+            </span>
+          </div>
+
+          <div className="message-list">
+            {messages.map((message, index) => (
+              <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
+                <span>{message.role === "assistant" ? "Hey Mark" : "나"}</span>
+                <p>{message.content}</p>
+              </div>
+            ))}
+            {isPending ? (
+              <div className="message assistant thinking">
+                <span>Hey Mark</span>
+                <p>지도/문제/재방문 신호를 엮어 실행안으로 좁히는 중입니다.</p>
+              </div>
+            ) : null}
+          </div>
+
+          {error ? <div className="error-box">{error}</div> : null}
+
+          <form className="chat-input" onSubmit={(event) => sendMessage(event)}>
+            <input
+              value={draftMessage}
+              onChange={(event) => setDraftMessage(event.target.value)}
+              placeholder="예: 예산은 거의 없고 오후 2-5시가 가장 비어요"
+            />
+            <button type="submit" disabled={isPending || !draftMessage.trim()}>
+              <Send size={18} aria-hidden="true" />
+            </button>
+          </form>
+        </section>
+      </div>
+
+      {response ? (
+        <ArtifactView
+          response={response}
+          onShortcut={(value) => sendMessage(undefined, value)}
+        />
+      ) : (
+        <section className="empty-artifact">
+          <Sparkles size={22} aria-hidden="true" />
+          <p>첫 전략을 만들면 질문 카드, 실행안, 측정 기준이 이곳에 정리됩니다.</p>
+        </section>
+      )}
     </main>
   );
 }

@@ -1,96 +1,79 @@
 import { marketing0Knowledge } from "@/lib/marketing0Knowledge";
 
-export type CafeBrief = {
-  cafeName: string;
-  region: string;
-  nearbyContext: string;
-  populationNotes: string;
-  ageGroups: string;
-  cafeSize: string;
-  signatureMenu: string;
-  priceRange: string;
-  openingStatus: string;
-  instagramHandle: string;
-  naverMapUrl: string;
-  blogUrls: string;
+export type CafeProfile = {
+  placeHint: string;
   currentProblem: string;
-  promoHistory: string;
-  repeatRate: string;
   goal: string;
-  budgetLevel: string;
+  knownSignals: string;
+};
+
+export type ConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type StrategyQuestion = {
+  id: string;
+  label: string;
+  reason: string;
+  suggestions: string[];
 };
 
 export type StrategyPlay = {
-  name: string;
-  why: string;
-  actions: string[];
-  offer: string;
+  title: string;
+  oneLine: string;
+  whyItWorks: string;
+  steps: string[];
   copy: string[];
   metric: string;
+  risk: string;
 };
 
-export type CafeAdviceResponse = {
-  diagnosis: string;
-  strategicRead: string[];
-  immediateDecision: string;
+export type StrategyArtifact = {
+  title: string;
+  plainSummary: string;
+  hiddenInsight: string;
+  confidence: number;
+  focus: Array<{
+    label: string;
+    value: number;
+  }>;
+  assumedFacts: string[];
+  questions: StrategyQuestion[];
   plays: StrategyPlay[];
-  fourteenDayPlan: Array<{
-    day: string;
+  timeline: Array<{
+    label: string;
     task: string;
   }>;
-  localAnalysis: string[];
-  contentIdeas: string[];
-  measurement: string[];
-  dataGaps: string[];
-  knowledgeStatus: {
-    youtube: string;
-    externalAnalysis: string;
-  };
-  sources: Array<{
-    title: string;
-    note: string;
-  }>;
+  sourceNotes: string[];
 };
 
-const maxLengths: Record<keyof CafeBrief, number> = {
-  cafeName: 80,
-  region: 120,
-  nearbyContext: 500,
-  populationNotes: 500,
-  ageGroups: 220,
-  cafeSize: 120,
-  signatureMenu: 220,
-  priceRange: 120,
-  openingStatus: 160,
-  instagramHandle: 120,
-  naverMapUrl: 300,
-  blogUrls: 700,
-  currentProblem: 900,
-  promoHistory: 700,
-  repeatRate: 80,
-  goal: 180,
-  budgetLevel: 80
+export type CafeCopilotResponse = {
+  mode: "gemini" | "fallback";
+  assistantMessage: string;
+  intentShortcuts: string[];
+  artifact: StrategyArtifact;
+  retrievalNotes: string[];
 };
 
-const defaults: CafeBrief = {
-  cafeName: "우리 카페",
-  region: "동네 상권",
-  nearbyContext: "주거지와 학교, 소형 사무실이 섞인 반경 1-2km 상권",
-  populationNotes: "가오픈 때 방문 인구가 많았고, 정식 오픈 후 방문율이 낮아짐",
-  ageGroups: "오전~낮 시간을 쓰는 동네 주민과 학생",
-  cafeSize: "소형 매장",
-  signatureMenu: "시그니처 음료와 베이커리",
-  priceRange: "중간 가격대",
-  openingStatus: "정식 오픈 초기",
-  instagramHandle: "",
-  naverMapUrl: "",
-  blogUrls: "",
+export type CafeCopilotRequest = {
+  profile?: Partial<CafeProfile>;
+  messages?: ConversationMessage[];
+};
+
+const defaults: CafeProfile = {
+  placeHint: "네이버지도 링크 또는 카페명",
   currentProblem:
-    "인스타그램 관심도가 낮고 정식 오픈 이후 방문율이 떨어졌지만 재방문 고객은 30-40% 수준",
-  promoHistory: "가오픈 때 커피 구매 시 디저트 2개 증정 행사로 많은 방문을 만들었음",
-  repeatRate: "30-40%",
-  goal: "평일 오전과 낮 방문 증가",
-  budgetLevel: "중간"
+    "가오픈 때는 많이 방문했지만 정식 오픈 후 방문율이 떨어졌고, 재방문 고객은 30-40% 정도입니다.",
+  goal: "평일 오전과 낮 방문을 늘리고 싶습니다.",
+  knownSignals: "가오픈 때 커피 구매 시 디저트 2개 증정 행사는 반응이 컸습니다."
+};
+
+const maxLengths: Record<keyof CafeProfile, number> = {
+  placeHint: 500,
+  currentProblem: 900,
+  goal: 300,
+  knownSignals: 700
 };
 
 function cleanText(value: unknown, fallback: string, maxLength: number) {
@@ -99,211 +82,569 @@ function cleanText(value: unknown, fallback: string, maxLength: number) {
   }
 
   const compact = value.replace(/\s+/g, " ").trim();
-  if (!compact) {
-    return fallback;
-  }
-
-  return compact.slice(0, maxLength);
+  return (compact || fallback).slice(0, maxLength);
 }
 
-export function normalizeCafeBrief(input: unknown): CafeBrief {
+export function normalizeCafeProfile(input: unknown): CafeProfile {
   const raw = typeof input === "object" && input !== null ? input : {};
 
   return Object.fromEntries(
-    (Object.keys(defaults) as Array<keyof CafeBrief>).map((key) => [
+    (Object.keys(defaults) as Array<keyof CafeProfile>).map((key) => [
       key,
       cleanText(
-        (raw as Partial<CafeBrief>)[key],
+        (raw as Partial<CafeProfile>)[key],
         defaults[key],
         maxLengths[key]
       )
     ])
-  ) as CafeBrief;
+  ) as CafeProfile;
+}
+
+function normalizeMessages(input: unknown): ConversationMessage[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input
+    .map((message) => {
+      if (
+        typeof message !== "object" ||
+        message === null ||
+        !("content" in message)
+      ) {
+        return null;
+      }
+
+      const role = (message as Partial<ConversationMessage>).role;
+      const content = cleanText(
+        (message as Partial<ConversationMessage>).content,
+        "",
+        900
+      );
+
+      if (!content) {
+        return null;
+      }
+
+      return {
+        role: role === "assistant" ? "assistant" : "user",
+        content
+      };
+    })
+    .filter((message): message is ConversationMessage => message !== null)
+    .slice(-10);
+}
+
+export function normalizeCafeCopilotRequest(
+  payload: unknown
+): {
+  profile: CafeProfile;
+  messages: ConversationMessage[];
+} {
+  const raw = typeof payload === "object" && payload !== null ? payload : {};
+
+  return {
+    profile: normalizeCafeProfile((raw as CafeCopilotRequest).profile),
+    messages: normalizeMessages((raw as CafeCopilotRequest).messages)
+  };
 }
 
 function includesAny(text: string, keywords: string[]) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
-function parseRepeatSignal(repeatRate: string) {
-  const match = repeatRate.match(/\d+/);
-  const value = match ? Number(match[0]) : 0;
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
-  if (value >= 30) {
-    return {
-      label: "재방문은 강한 편",
-      implication:
-        "제품 만족 문제라기보다 첫 방문을 다시 부르는 장치와 동네 노출 빈도가 부족할 가능성이 큽니다."
-    };
+function extractJson(text: string) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
   }
 
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first >= 0 && last > first) {
+    return text.slice(first, last + 1);
+  }
+
+  return text;
+}
+
+function asStringArray(value: unknown, fallback: string[], limit = 6) {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const values = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+
+  return values.length > 0 ? values : fallback;
+}
+
+function normalizeArtifact(value: unknown, fallback: StrategyArtifact) {
+  if (typeof value !== "object" || value === null) {
+    return fallback;
+  }
+
+  const raw = value as Partial<StrategyArtifact>;
+  const focus = Array.isArray(raw.focus)
+    ? raw.focus
+        .map((item) => {
+          if (typeof item !== "object" || item === null) {
+            return null;
+          }
+
+          const label = cleanText(
+            (item as { label?: unknown }).label,
+            "",
+            40
+          );
+          const value = Number((item as { value?: unknown }).value);
+
+          if (!label || Number.isNaN(value)) {
+            return null;
+          }
+
+          return { label, value: clamp(value, 0, 100) };
+        })
+        .filter((item): item is { label: string; value: number } => item !== null)
+        .slice(0, 4)
+    : fallback.focus;
+
+  const questions = Array.isArray(raw.questions)
+    ? raw.questions
+        .map((item, index) => {
+          if (typeof item !== "object" || item === null) {
+            return null;
+          }
+
+          return {
+            id: cleanText(
+              (item as { id?: unknown }).id,
+              `q${index + 1}`,
+              24
+            ),
+            label: cleanText(
+              (item as { label?: unknown }).label,
+              fallback.questions[index]?.label ?? "확인이 필요한 정보",
+              120
+            ),
+            reason: cleanText(
+              (item as { reason?: unknown }).reason,
+              fallback.questions[index]?.reason ?? "전략의 정확도를 높입니다.",
+              160
+            ),
+            suggestions: asStringArray(
+              (item as { suggestions?: unknown }).suggestions,
+              fallback.questions[index]?.suggestions ?? ["모르겠어요"],
+              4
+            )
+          };
+        })
+        .filter((item): item is StrategyQuestion => item !== null)
+        .slice(0, 3)
+    : fallback.questions;
+
+  const plays = Array.isArray(raw.plays)
+    ? raw.plays
+        .map((item, index) => {
+          if (typeof item !== "object" || item === null) {
+            return null;
+          }
+
+          const play = item as Partial<StrategyPlay>;
+          const fallbackPlay = fallback.plays[index] ?? fallback.plays[0];
+
+          return {
+            title: cleanText(play.title, fallbackPlay.title, 80),
+            oneLine: cleanText(play.oneLine, fallbackPlay.oneLine, 140),
+            whyItWorks: cleanText(play.whyItWorks, fallbackPlay.whyItWorks, 260),
+            steps: asStringArray(play.steps, fallbackPlay.steps, 5),
+            copy: asStringArray(play.copy, fallbackPlay.copy, 4),
+            metric: cleanText(play.metric, fallbackPlay.metric, 180),
+            risk: cleanText(play.risk, fallbackPlay.risk, 180)
+          };
+        })
+        .filter((item): item is StrategyPlay => item !== null)
+        .slice(0, 3)
+    : fallback.plays;
+
+  const timeline = Array.isArray(raw.timeline)
+    ? raw.timeline
+        .map((item, index) => {
+          if (typeof item !== "object" || item === null) {
+            return null;
+          }
+
+          const fallbackItem = fallback.timeline[index] ?? fallback.timeline[0];
+
+          return {
+            label: cleanText(
+              (item as { label?: unknown }).label,
+              fallbackItem.label,
+              40
+            ),
+            task: cleanText(
+              (item as { task?: unknown }).task,
+              fallbackItem.task,
+              180
+            )
+          };
+        })
+        .filter((item): item is { label: string; task: string } => item !== null)
+        .slice(0, 5)
+    : fallback.timeline;
+
   return {
-    label: "재방문 검증이 더 필요",
-    implication:
-      "방문 수를 키우기 전에 메뉴 만족, 좌석 경험, 가격 저항을 먼저 점검해야 합니다."
+    title: cleanText(raw.title, fallback.title, 80),
+    plainSummary: cleanText(raw.plainSummary, fallback.plainSummary, 260),
+    hiddenInsight: cleanText(raw.hiddenInsight, fallback.hiddenInsight, 260),
+    confidence: clamp(Number(raw.confidence) || fallback.confidence, 0, 100),
+    focus: focus.length > 0 ? focus : fallback.focus,
+    assumedFacts: asStringArray(raw.assumedFacts, fallback.assumedFacts, 6),
+    questions,
+    plays,
+    timeline,
+    sourceNotes: asStringArray(raw.sourceNotes, fallback.sourceNotes, 6)
   };
 }
 
-function sourceLine(value: string, fallback: string) {
-  return value.trim().length > 0 ? value : fallback;
-}
-
-export function createCafeAdvice(input: CafeBrief): CafeAdviceResponse {
-  const brief = normalizeCafeBrief(input);
-  const combined = [
-    brief.currentProblem,
-    brief.promoHistory,
-    brief.populationNotes,
-    brief.goal
-  ].join(" ");
-  const repeatSignal = parseRepeatSignal(brief.repeatRate);
-  const hadBigPromo = includesAny(combined, ["디저트", "증정", "행사", "가오픈", "많은 인원"]);
-  const lowInstagram = includesAny(combined, ["인스타", "Instagram", "관심도", "팔로워"]);
-  const morningGoal = includesAny(combined, ["오전", "아침", "낮", "평일"]);
-
-  const promoDiagnosis = hadBigPromo
-    ? "가오픈 행사는 수요를 만든 것이 아니라 이미 있던 방문 가능 인구를 강하게 끌어낸 신호입니다. 문제는 그 인구를 정식 오픈 이후의 일상 방문 이유로 전환하지 못한 데 있습니다."
-    : "방문 가능 인구가 실제로 얼마나 있는지 먼저 작은 오퍼로 검증해야 합니다.";
-
-  const instagramDiagnosis = lowInstagram
-    ? "인스타그램은 당장 팬덤 채널로 보기 어렵습니다. 대신 메뉴 발견, 영업시간 확인, 지도 검색 전환을 보조하는 증거 채널로 써야 합니다."
-    : "인스타그램은 신규 고객 설득보다 방문 직전 확신을 주는 메뉴/공간 증거 채널로 운영하는 편이 안전합니다.";
-
-  const timeSlot = morningGoal ? "오전 8-11시와 점심 직후" : "가장 좌석이 비는 시간대";
-  const cafeLabel = `${brief.cafeName}(${brief.region})`;
+function buildFallbackArtifact(profile: CafeProfile): StrategyArtifact {
+  const combined = `${profile.currentProblem} ${profile.knownSignals} ${profile.goal}`;
+  const hadBigPromo = includesAny(combined, ["디저트", "증정", "가오픈", "행사", "많"]);
+  const hasRepeat = includesAny(combined, ["30", "40", "재방문", "단골"]);
+  const hasMap = includesAny(profile.placeHint, ["naver", "map", "지도", "place"]);
 
   return {
-    diagnosis: `${cafeLabel}의 핵심 문제는 "맛이 별로라서 안 오는 것"보다 "가오픈급 혜택이 사라진 뒤에도 굳이 오늘 들를 이유가 약한 것"에 가깝습니다. ${repeatSignal.label}이므로 기존 방문자의 만족 신호는 있습니다. 지금은 큰 할인보다 ${timeSlot}에 반복 방문할 명분을 만들고, 네이버지도/리뷰/동네 콘텐츠로 첫 방문 불안을 낮춰야 합니다.`,
-    strategicRead: [
-      promoDiagnosis,
-      repeatSignal.implication,
-      instagramDiagnosis,
-      `${marketing0Knowledge.derivedPrinciples[0].title}: ${marketing0Knowledge.derivedPrinciples[0].note}`,
-      `현재 입력 기준 주요 고객은 ${brief.ageGroups}입니다. 이 고객에게는 "예쁜 카페"보다 "오늘 동선에서 들를 이유"가 먼저 보여야 합니다.`,
-      `대표 메뉴는 "${brief.signatureMenu}"입니다. 이 메뉴를 단순 소개가 아니라 시간대별 방문 명분으로 재포장해야 합니다.`
+    title: "가오픈 수요를 평일 루틴으로 바꾸는 14일 실험",
+    plainSummary:
+      "방문 인구가 없는 문제가 아니라, 정식 오픈 후에도 오늘 다시 들를 이유가 약한 상태로 보입니다. 큰 증정을 반복하지 말고 시간대와 메뉴를 묶은 작은 명분을 먼저 만드세요.",
+    hiddenInsight:
+      "가오픈 혜택은 고객이 가격에만 반응했다는 뜻이 아니라, 근처 사람들이 이미 매장을 알아차릴 준비가 되어 있다는 신호입니다. 이제는 '싸서 방문'이 아니라 '내 동선에 넣기 쉬워서 방문'으로 바꿔야 합니다.",
+    confidence: hasRepeat ? 76 : 62,
+    focus: [
+      { label: "방문 명분", value: 86 },
+      { label: "지도 증거", value: hasMap ? 72 : 48 },
+      { label: "재방문", value: hasRepeat ? 80 : 52 },
+      { label: "콘텐츠", value: 58 }
     ],
-    immediateDecision:
-      "다음 2주는 신규 할인 확대가 아니라 '첫 방문 회수'와 '평일 루틴화'에 집중하세요. 커피 구매 시 디저트 2개 같은 큰 증정은 재현하지 말고, 재방문을 조건으로 한 작은 혜택으로 바꿔야 합니다.",
+    assumedFacts: [
+      hadBigPromo
+        ? "가오픈 프로모션은 단기 방문을 만들 만큼 강한 반응이 있었습니다."
+        : "첫 방문 수요 검증은 아직 더 필요합니다.",
+      hasRepeat
+        ? "재방문율 30-40%는 제품 만족 신호로 볼 수 있습니다."
+        : "재방문 만족도 신호는 아직 명확하지 않습니다.",
+      "카페 업종은 광고 확장보다 네이버지도 증거, 메뉴 사진, 시간대별 방문 이유가 먼저 작동합니다."
+    ],
+    questions: [
+      {
+        id: "time-slot",
+        label: "가장 비는 시간대가 언제인가요?",
+        reason: "방문 명분은 시간대와 함께 설계해야 바로 실행됩니다.",
+        suggestions: ["평일 오전", "점심 직후", "오후 3-5시", "아직 모름"]
+      },
+      {
+        id: "hero-menu",
+        label: "처음 온 손님에게 꼭 먹이고 싶은 메뉴 하나는요?",
+        reason: "대표 메뉴 하나가 있어야 지도 사진, 리뷰 요청, 세트 제안이 모입니다.",
+        suggestions: ["시그니처 음료", "소금빵/디저트", "커피+빵 세트", "아직 모름"]
+      },
+      {
+        id: "contact",
+        label: "가오픈 방문 고객에게 다시 닿을 방법이 있나요?",
+        reason: "연락 채널이 있으면 신규 광고보다 회수 캠페인이 먼저입니다.",
+        suggestions: ["인스타", "영수증/쿠폰", "없음", "일부만 가능"]
+      }
+    ],
     plays: [
       {
-        name: "가오픈 고객 회수전",
-        why: "가오픈 때 아침부터 사람이 몰렸다면 주변에 방문 가능한 인구는 이미 있습니다. 정식 오픈 후 이탈한 사람에게 다시 올 이유를 만들어야 합니다.",
-        actions: [
-          "매장 입구, 네이버 소식, 인스타 고정글에 '가오픈 때 와주신 분들을 위한 7일 재방문 메뉴'를 올립니다.",
-          "혜택은 디저트 2개 증정이 아니라 '시그니처 음료 주문 시 미니 베이커리 1개 업그레이드'처럼 원가와 품질 인식을 지키는 방식으로 둡니다.",
-          "방문 고객에게 다음 방문 시간대를 직접 지정하게 합니다: 오전 픽업, 점심 후 20분 휴식, 하교 후 간식.",
-          "계산대에는 '다음 방문 때 보여주세요' 문구가 있는 작은 카드나 이미지 쿠폰을 둡니다."
+        title: "가오픈 고객 회수권",
+        oneLine: "가오픈 때 온 사람에게만 보이는 듯한 7일 재초대 명분을 만듭니다.",
+        whyItWorks:
+          "사람이 몰렸던 이유를 큰 할인으로 반복하면 원가와 브랜드가 같이 무너집니다. 대신 '정식 메뉴를 다시 경험해 달라'는 감사권으로 방문 이유를 좁히면 재방문 고객을 회수하기 쉽습니다.",
+        steps: [
+          "네이버 소식, 인스타 고정글, 매장 입구에 같은 문구를 7일만 걸어둡니다.",
+          "혜택은 디저트 2개 증정이 아니라 미니 베이커리 업그레이드처럼 작게 둡니다.",
+          "사용 가능 시간을 평일 오전이나 낮처럼 빈 시간대로 제한합니다.",
+          "방문 시 다음 방문용 작은 쿠폰 이미지를 전달합니다."
         ],
-        offer: "가오픈 감사 7일권: 시그니처 음료 + 미니 베이커리 업그레이드, 1인 1회, 평일 오전/낮 한정",
         copy: [
           "가오픈 때 와주셨다면, 이번엔 정식 메뉴로 다시 초대합니다.",
-          `가장 조용한 시간에 다시 경험하는 "${brief.signatureMenu}" 7일 감사권을 열었습니다.`,
-          "큰 증정보다 오래 맛있게 남을 메뉴로 준비했습니다."
+          "큰 증정보다 오래 기억될 한 조각으로 준비했습니다.",
+          "이번 주 평일 낮에만 열어둔 감사권입니다."
         ],
-        metric: "7일 동안 감사권 사용 수, 사용 시간대, 재방문 고객 중 신규 동행 비율"
+        metric: "7일권 사용 수, 사용 시간대, 재방문 고객의 동행 여부",
+        risk: "혜택이 너무 크면 정가 방문 이유가 약해지므로 업그레이드형으로 제한하세요."
       },
       {
-        name: "평일 루틴 메뉴 만들기",
-        why: "재방문율이 30-40%라면 반복 구매 가능한 메뉴 경험은 있습니다. 문제는 고객 머릿속에 '언제 가는 카페인지'가 고정되지 않은 것입니다.",
-        actions: [
-          `${timeSlot} 중 하나를 정해 '브리즈 타임' 같은 이름을 붙입니다.`,
-          `대표 메뉴를 단품 홍보하지 말고 '등교 전 10분', '점심 후 빵 한 조각', '오전 산책 후 커피'처럼 상황으로 포장합니다.`,
-          "한 메뉴만 2주간 반복 노출합니다. 메뉴판, 네이버 대표사진, 인스타 첫 3개 게시물의 메시지를 맞춥니다.",
-          "좌석이 비는 시간대에는 사진용 세트보다 빠른 주문/포장 동선을 강조합니다."
+        title: "동네 루틴 세트",
+        oneLine: "카페를 '예쁜 곳'이 아니라 특정 시간에 들르는 습관으로 포지셔닝합니다.",
+        whyItWorks:
+          "로컬 카페는 멀리서 찾아오는 이유보다 반경 생활권에서 반복되는 이유가 중요합니다. 시간대 이름과 메뉴 조합을 고정하면 고객이 기억하기 쉽습니다.",
+        steps: [
+          "가장 비는 시간대를 하나 정하고 이름을 붙입니다.",
+          "대표 메뉴 하나와 작은 디저트를 묶어 주문 결정을 줄입니다.",
+          "네이버 대표사진과 인스타 첫 게시물 3개를 같은 세트로 맞춥니다.",
+          "손님에게 '언제 오기 좋았는지'만 물어 다음 문구에 반영합니다."
         ],
-        offer: "평일 루틴 세트: 시그니처 음료 + 작은 빵, 특정 시간대 500-1000원 수준의 체감 혜택",
         copy: [
-          `${brief.region}에서 오전을 시작하는 가장 짧은 루틴.`,
-          `오늘은 "${brief.signatureMenu}"으로 점심 전까지 버티는 날.`,
-          "사진 찍으러 오는 카페보다, 내일도 들르게 되는 카페."
+          "평일 오전, 동네에서 가장 짧게 쉬는 루틴.",
+          "커피 한 잔보다 오늘 동선에 들어오는 10분.",
+          "처음 오면 이 조합부터 드셔보세요."
         ],
-        metric: "지정 시간대 주문 수, 세트 선택률, 2회 이상 방문 고객 수"
+        metric: "지정 시간대 주문 수, 세트 선택률, 두 번째 방문 수",
+        risk: "메뉴를 여러 개 밀면 기억이 흐려지므로 2주 동안 하나만 반복하세요."
       },
       {
-        name: "네이버지도 증거 보강",
-        why: "인스타 관심도가 낮을 때 신규 방문은 지도 검색, 리뷰 사진, 블로그 후기 같은 '방문 직전 증거'에서 더 많이 움직입니다.",
-        actions: [
-          "네이버지도 대표사진 5장을 정리합니다: 외관, 입구, 대표 메뉴, 좌석, 영업시간이 한눈에 보이는 사진.",
-          "리뷰 요청 문구를 바꿉니다. '리뷰 부탁드려요'가 아니라 '처음 오는 분들이 메뉴 고르기 쉽게, 오늘 드신 메뉴 사진 한 장만 남겨주세요'라고 말합니다.",
-          "동네 블로그 글은 3개 주제로 나눕니다: 가는 길, 대표 메뉴, 조용한 시간대. 대형 체험단보다 반경 생활권 블로그를 우선합니다.",
-          "인스타에는 예쁜 사진보다 지도 저장을 유도하는 짧은 안내를 고정합니다."
+        title: "네이버지도 증거 정리",
+        oneLine: "처음 오는 사람이 방문 직전 확인하는 사진과 리뷰를 의도적으로 바꿉니다.",
+        whyItWorks:
+          "인스타 반응이 약할 때는 지도 저장, 길찾기, 메뉴 사진 리뷰가 더 직접적인 전환 신호입니다. 방문 직전 불안을 없애는 정보가 먼저 필요합니다.",
+        steps: [
+          "외관, 입구, 대표 메뉴, 좌석, 메뉴판 사진을 최신으로 맞춥니다.",
+          "리뷰 요청은 '메뉴 사진 한 장만 남겨주세요'처럼 구체적으로 말합니다.",
+          "블로그는 가는 길, 조용한 시간, 대표 메뉴 세 주제로 나눕니다.",
+          "인스타는 좋아요보다 지도 저장으로 이어지는 문구를 씁니다."
         ],
-        offer: "리뷰 보상은 큰 할인 대신 다음 방문용 사이즈업/미니 쿠키처럼 재방문 조건으로 설계",
         copy: [
-          "처음 오시는 분은 이 메뉴부터 드셔보세요.",
-          `${brief.region}에서 대표 메뉴를 찾는 분들을 위해 "${brief.signatureMenu}" 정보를 고정해뒀습니다.`,
-          "네이버지도에서 저장해두면 조용한 시간대 소식을 먼저 볼 수 있어요."
+          "처음 오시는 분은 지도 사진의 이 메뉴부터 보세요.",
+          "길찾기 전에 메뉴와 좌석 분위기를 먼저 확인하세요.",
+          "동네에서 조용한 시간대를 찾는 분께 맞춰둔 메뉴입니다."
         ],
-        metric: "네이버 저장 수, 길찾기 클릭, 메뉴 사진 포함 리뷰 수, 블로그 유입 문의"
+        metric: "네이버 저장, 길찾기 클릭, 메뉴 사진 포함 리뷰 수",
+        risk: "실제 사진과 매장 경험이 다르면 역효과가 나므로 과장 이미지는 피하세요."
       }
     ],
-    fourteenDayPlan: [
-      {
-        day: "1-2일차",
-        task: "가오픈 감사 7일권 문구와 조건을 확정하고 매장/네이버/인스타 고정 영역에 같은 메시지로 배치"
-      },
-      {
-        day: "3-4일차",
-        task: "네이버지도 대표사진 5장과 메뉴 설명을 교체하고, 리뷰 요청 문구를 계산대에 붙이기"
-      },
-      {
-        day: "5-7일차",
-        task: `${timeSlot} 주문 수를 매일 기록하고 평일 루틴 세트의 메뉴/가격 저항을 확인`
-      },
-      {
-        day: "8-10일차",
-        task: "방문 고객에게 '어디서 보고 왔는지' 한 가지만 묻고 지도/지인/인스타/블로그로 표시"
-      },
-      {
-        day: "11-14일차",
-        task: "가장 반응이 큰 시간대와 메뉴만 남기고 다음 2주 캠페인 이름을 고정"
-      }
+    timeline: [
+      { label: "오늘", task: "대표 시간대와 대표 메뉴 하나를 정하고 모든 문구를 그 조합으로 맞춥니다." },
+      { label: "3일", task: "네이버지도 사진 5장과 리뷰 요청 문구를 교체합니다." },
+      { label: "7일", task: "가오픈 감사권을 빈 시간대 한정으로 운영합니다." },
+      { label: "14일", task: "반응이 있는 시간대와 메뉴만 남기고 다음 캠페인 이름을 고정합니다." }
     ],
-    localAnalysis: [
-      `지역/상권: ${sourceLine(brief.nearbyContext, brief.region)}`,
-      `인구/연령 힌트: ${sourceLine(brief.populationNotes, brief.ageGroups)}`,
-      `매장 규모: ${brief.cafeSize}. 규모가 작을수록 대량 방문보다 빈 시간대 반복 방문을 설계해야 합니다.`,
-      `온라인 참고: Instagram ${sourceLine(brief.instagramHandle, "미입력")}, Naver Map ${sourceLine(brief.naverMapUrl, "미입력")}, Blog ${sourceLine(brief.blogUrls, "미입력")}`
-    ],
-    contentIdeas: [
-      "가오픈 때 많이 나간 메뉴와 정식 오픈 대표 메뉴를 비교하는 짧은 게시물",
-      "오전/낮 시간대 실제 좌석 분위기를 보여주는 10초 영상",
-      "처음 오는 사람이 메뉴 고르는 순서: 시그니처 1개, 빵 1개, 포장 가능 여부",
-      "네이버지도 저장을 유도하는 길찾기형 게시물",
-      "단골이 다시 오는 이유를 메뉴보다 상황 중심으로 묻는 리뷰 카드"
-    ],
-    measurement: [
-      "쿠폰 사용 수보다 시간대별 재방문 수를 먼저 봅니다.",
-      "인스타 좋아요보다 네이버 저장, 길찾기, 메뉴 사진 리뷰를 봅니다.",
-      "2주 동안 큰 할인 없이도 반복되는 주문 조합이 생기면 다음 캠페인 소재로 고정합니다.",
-      "가오픈 수준의 방문 수를 목표로 잡지 말고, 평일 빈 시간대 주문 10-20% 증가를 1차 목표로 둡니다."
-    ],
-    dataGaps: [
-      "정확한 지역명과 반경 1km 주요 시설",
-      "네이버지도 현재 사진/리뷰/저장 수",
-      "인스타그램 최근 10개 게시물의 도달/저장/프로필 방문",
-      "시간대별 매출과 메뉴별 원가",
-      "가오픈 방문 고객을 다시 연락할 수 있는 채널 여부"
-    ],
-    knowledgeStatus: {
-      youtube:
-        `Marketing0 분석 JSONL은 로드 가능한 일반 마케팅 관점 레이어로 충분합니다. 다만 ${marketing0Knowledge.videoCount}개 분석 중 transcript 기반 요약은 ${marketing0Knowledge.transcriptBackedCount}개이고, 카페/로컬 직접 사례는 부족합니다. 따라서 현재 답변은 이 관점 카드와 카페 임시 플레이북, 사용자가 입력한 맥락을 함께 사용합니다.`,
-      externalAnalysis:
-        "Instagram, Naver Map, 블로그 URL은 현재 참고 입력값으로만 사용합니다. 공식 API/허가 기반 수집이 붙기 전까지는 실제 페이지 내용을 자동 분석했다고 주장하지 않습니다."
-    },
-    sources: [
+    sourceNotes: [
+      "Marketing0 파생 원칙: 광고보다 판단 기준, 욕망 설계, 채널별 역할 분리를 사용했습니다.",
+      "사용자 입력: 가오픈 반응, 정식 오픈 후 방문 하락, 재방문율 신호를 우선 반영했습니다.",
+      hasMap
+        ? "Gemini 연결 시 제공된 URL은 URL context 도구로 접근을 시도합니다."
+        : "지도/블로그 링크가 없으면 외부 페이지 분석은 수행하지 않습니다."
+    ]
+  };
+}
+
+function buildSystemInstruction() {
+  const principles = marketing0Knowledge.derivedPrinciples
+    .map((principle) => `- ${principle.title}: ${principle.note}`)
+    .join("\n");
+
+  return [
+    "You are Hey Mark, a Korean cafe marketing copilot for non-expert cafe owners.",
+    "Answer in Korean. Be concrete, plain, and operational.",
+    "Never write generic strategy words without a specific customer moment, offer, step, metric, and risk.",
+    "Use the user's cafe context first. If links are available, use URL context only as supporting evidence and do not claim inaccessible data was retrieved.",
+    "Actively ask up to 3 follow-up questions when information is ambiguous or missing.",
+    "Return JSON only. No markdown fences.",
+    "Marketing0 derived principles:",
+    principles,
+    `Knowledge limitation: ${marketing0Knowledge.sufficiency}. Do not pretend this is a complete cafe corpus.`
+  ].join("\n");
+}
+
+function buildPrompt(profile: CafeProfile, messages: ConversationMessage[]) {
+  const recentConversation = messages
+    .map((message) => `${message.role}: ${message.content}`)
+    .join("\n");
+
+  return [
+    "Create a cafe marketing strategy artifact.",
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
       {
-        title: "사용자 제공 카페 상황",
-        note: "가오픈 프로모션 반응, 정식 오픈 후 방문 하락, 30-40% 재방문율을 핵심 신호로 사용했습니다."
+        assistantMessage: "string",
+        intentShortcuts: ["string", "string", "string"],
+        artifact: {
+          title: "string",
+          plainSummary: "string",
+          hiddenInsight: "string",
+          confidence: 0,
+          focus: [
+            { label: "string", value: 0 },
+            { label: "string", value: 0 }
+          ],
+          assumedFacts: ["string"],
+          questions: [
+            {
+              id: "string",
+              label: "string",
+              reason: "string",
+              suggestions: ["string"]
+            }
+          ],
+          plays: [
+            {
+              title: "string",
+              oneLine: "string",
+              whyItWorks: "string",
+              steps: ["string"],
+              copy: ["string"],
+              metric: "string",
+              risk: "string"
+            }
+          ],
+          timeline: [{ label: "string", task: "string" }],
+          sourceNotes: ["string"]
+        }
       },
-      {
-        title: "임시 카페 로컬 마케팅 카드",
-        note: "큰 할인 반복보다 재방문 조건부 오퍼, 지도 증거, 시간대 루틴화를 우선합니다."
+      null,
+      2
+    ),
+    "",
+    "Cafe profile:",
+    `- placeHint: ${profile.placeHint}`,
+    `- currentProblem: ${profile.currentProblem}`,
+    `- goal: ${profile.goal}`,
+    `- knownSignals: ${profile.knownSignals}`,
+    "",
+    "Recent conversation:",
+    recentConversation || "No conversation yet.",
+    "",
+    "Rules:",
+    "- Make the first strategy feel like an idea the owner can execute tomorrow.",
+    "- If the owner gave a Naver Map, Instagram, or blog URL, analyze it through URL context when accessible and include retrieval caveats in sourceNotes.",
+    "- If data is missing, ask questions inside artifact.questions and still provide a provisional idea.",
+    "- Do not ask for information that can be inferred from an accessible URL.",
+    "- Keep each play creative but measurable."
+  ].join("\n");
+}
+
+async function callGemini(
+  profile: CafeProfile,
+  messages: ConversationMessage[],
+  fallback: StrategyArtifact
+) {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
       },
-      {
-        title: "Marketing0 파생 지식 상태",
-        note: "일반 마케팅 관점은 사용 가능하지만, 카페 전용 실행 지식은 별도 보강이 필요합니다."
-      }
+      body: JSON.stringify({
+        system_instruction: {
+          parts: [{ text: buildSystemInstruction() }]
+        },
+        contents: [
+          {
+            parts: [{ text: buildPrompt(profile, messages) }]
+          }
+        ],
+        tools: [{ url_context: {} }, { google_search: {} }],
+        generationConfig: {
+          temperature: 0.8,
+          maxOutputTokens: 4096
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gemini request failed with ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+      url_context_metadata?: {
+        url_metadata?: Array<{
+          retrieved_url?: string;
+          url_retrieval_status?: string;
+        }>;
+      };
+    }>;
+  };
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts
+    ?.map((part) => part.text ?? "")
+    .join("")
+    .trim();
+
+  if (!text) {
+    throw new Error("Gemini returned an empty response");
+  }
+
+  const parsed = JSON.parse(extractJson(text)) as Partial<CafeCopilotResponse>;
+  const urlNotes =
+    candidate?.url_context_metadata?.url_metadata?.map((item) =>
+      `${item.retrieved_url ?? "URL"}: ${item.url_retrieval_status ?? "unknown"}`
+    ) ?? [];
+
+  return {
+    assistantMessage: cleanText(
+      parsed.assistantMessage,
+      "좋아요. 지금 정보만으로도 첫 실행안을 만들고, 부족한 부분은 질문으로 좁혀볼게요.",
+      280
+    ),
+    intentShortcuts: asStringArray(parsed.intentShortcuts, [
+      "가장 먼저 할 일만 보여줘",
+      "돈 안 쓰는 방식으로 바꿔줘",
+      "인스타/네이버 문구를 더 써줘"
+    ]),
+    artifact: normalizeArtifact(parsed.artifact, fallback),
+    retrievalNotes: urlNotes
+  };
+}
+
+export async function createCafeCopilotResponse(
+  request: {
+    profile: CafeProfile;
+    messages: ConversationMessage[];
+  }
+): Promise<CafeCopilotResponse> {
+  const fallback = buildFallbackArtifact(request.profile);
+
+  try {
+    const gemini = await callGemini(request.profile, request.messages, fallback);
+
+    if (gemini) {
+      return {
+        mode: "gemini",
+        assistantMessage: gemini.assistantMessage,
+        intentShortcuts: gemini.intentShortcuts,
+        artifact: gemini.artifact,
+        retrievalNotes: gemini.retrievalNotes
+      };
+    }
+  } catch (error) {
+    console.error(error);
+  }
+
+  return {
+    mode: "fallback",
+    assistantMessage:
+      "지금은 Gemini 키가 없거나 호출이 실패해서 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
+    intentShortcuts: [
+      "가장 먼저 할 일만 보여줘",
+      "돈 안 쓰는 방식으로 바꿔줘",
+      "인스타/네이버 문구를 더 써줘"
+    ],
+    artifact: fallback,
+    retrievalNotes: [
+      "Gemini API가 연결되면 제공된 URL에 대해 URL context 검색을 시도합니다.",
+      "현재 fallback은 외부 페이지를 직접 읽었다고 주장하지 않습니다."
     ]
   };
 }
