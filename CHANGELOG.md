@@ -4,6 +4,12 @@ All notable changes to Hey Mark are tracked here.
 
 This project starts versioning at `v0.0.1` and follows Semantic Versioning.
 
+## [0.1.6] - 2026-06-18
+
+### Changed
+
+- Replaced the hero headline with a quieter cafe-owner-first message.
+
 ## [0.1.5] - 2026-06-18
 
 ### Fixed
