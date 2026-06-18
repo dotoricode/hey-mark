@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { createCafeAdvice, normalizeCafeBrief } from "@/lib/advisor";
+import {
+  createCafeCopilotResponse,
+  normalizeCafeCopilotRequest
+} from "@/lib/advisor";
 
 export async function POST(request: Request) {
   let payload: unknown;
@@ -10,8 +13,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const brief = normalizeCafeBrief(payload);
-  const advice = createCafeAdvice(brief);
+  const adviceRequest = normalizeCafeCopilotRequest(payload);
+  const advice = await createCafeCopilotResponse(adviceRequest);
 
   return NextResponse.json(advice);
 }
