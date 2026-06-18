@@ -540,8 +540,7 @@ function errorMessage(error: unknown) {
 async function requestGeminiContent(
   profile: CafeProfile,
   messages: ConversationMessage[],
-  useTools: boolean,
-  useJsonMode: boolean
+  useTools: boolean
 ) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -571,8 +570,7 @@ async function requestGeminiContent(
           : {}),
         generationConfig: {
           temperature: 0.8,
-          maxOutputTokens: 4096,
-          ...(useJsonMode ? { response_mime_type: "application/json" } : {})
+          maxOutputTokens: 4096
         }
       })
     }
@@ -653,9 +651,8 @@ async function callGemini(
 
   const notes: string[] = [];
   const attempts = [
-    { label: "URL/Search tools with JSON MIME", useTools: true, useJsonMode: true },
-    { label: "JSON MIME without URL/Search tools", useTools: false, useJsonMode: true },
-    { label: "plain Gemini generation", useTools: false, useJsonMode: false }
+    { label: "URL/Search tools", useTools: true },
+    { label: "plain Gemini generation", useTools: false }
   ];
 
   for (const attempt of attempts) {
@@ -663,8 +660,7 @@ async function callGemini(
       const data = await requestGeminiContent(
         profile,
         messages,
-        attempt.useTools,
-        attempt.useJsonMode
+        attempt.useTools
       );
 
       return readGeminiResult(data, fallback, notes);
