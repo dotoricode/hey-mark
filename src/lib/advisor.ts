@@ -182,102 +182,6 @@ function parseGeminiJson(text: string) {
   }
 }
 
-const stringArraySchema = {
-  type: "array",
-  items: { type: "string" }
-};
-
-const cafeCopilotResponseSchema = {
-  type: "object",
-  properties: {
-    assistantMessage: { type: "string" },
-    intentShortcuts: stringArraySchema,
-    artifact: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        plainSummary: { type: "string" },
-        hiddenInsight: { type: "string" },
-        confidence: { type: "number" },
-        focus: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              label: { type: "string" },
-              value: { type: "number" }
-            },
-            required: ["label", "value"]
-          }
-        },
-        assumedFacts: stringArraySchema,
-        questions: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              label: { type: "string" },
-              reason: { type: "string" },
-              suggestions: stringArraySchema
-            },
-            required: ["id", "label", "reason", "suggestions"]
-          }
-        },
-        plays: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              title: { type: "string" },
-              oneLine: { type: "string" },
-              whyItWorks: { type: "string" },
-              steps: stringArraySchema,
-              copy: stringArraySchema,
-              metric: { type: "string" },
-              risk: { type: "string" }
-            },
-            required: [
-              "title",
-              "oneLine",
-              "whyItWorks",
-              "steps",
-              "copy",
-              "metric",
-              "risk"
-            ]
-          }
-        },
-        timeline: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              label: { type: "string" },
-              task: { type: "string" }
-            },
-            required: ["label", "task"]
-          }
-        },
-        sourceNotes: stringArraySchema
-      },
-      required: [
-        "title",
-        "plainSummary",
-        "hiddenInsight",
-        "confidence",
-        "focus",
-        "assumedFacts",
-        "questions",
-        "plays",
-        "timeline",
-        "sourceNotes"
-      ]
-    }
-  },
-  required: ["assistantMessage", "intentShortcuts", "artifact"]
-};
-
 function asStringArray(value: unknown, fallback: string[], limit = 6) {
   if (!Array.isArray(value)) {
     return fallback;
@@ -666,13 +570,7 @@ async function requestGeminiContent(
           : {}),
         generationConfig: {
           temperature: 0.8,
-          maxOutputTokens: 4096,
-          responseFormat: {
-            text: {
-              mimeType: "application/json",
-              schema: cafeCopilotResponseSchema
-            }
-          }
+          maxOutputTokens: 4096
         }
       })
     }
