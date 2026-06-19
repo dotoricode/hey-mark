@@ -103,10 +103,9 @@ function AiUsageStrip({ response }: { response: CafeCopilotResponse }) {
       : "토큰 집계 대기";
 
   return (
-    <div className="ai-usage-strip" aria-label="AI 사용 진단">
-      <span>{usage.provider === "gemini" ? "Gemini 사용" : "Fallback 사용"}</span>
-      <strong>{usage.model}</strong>
-      <span>{usage.attempt}</span>
+    <div className="ai-usage-strip" aria-label="Mark 상태">
+      <span>Mark 사용</span>
+      <strong>Mark engine</strong>
       <span>{formatElapsed(usage.elapsedMs)}</span>
       <span>{tokenLabel}</span>
     </div>
@@ -410,7 +409,7 @@ export default function Home() {
     <main className="copilot-shell">
       <section className="app-hero">
         <div className="brand">
-          <div className="brand-mark">H</div>
+          <img className="brand-mark" src="/mark.png" alt="" />
           <span>Hey Mark</span>
         </div>
         <div className="hero-copy">
@@ -420,6 +419,9 @@ export default function Home() {
             네이버지도 링크나 카페명, 지금 겪는 문제만 남겨주세요. 필요한 정보는 대화로
             확인하고 실행 순서까지 정리합니다.
           </p>
+        </div>
+        <div className="brand-portrait" aria-hidden="true">
+          <img src="/mark.png" alt="" />
         </div>
         <div className="knowledge-pill">
           <Bot size={18} aria-hidden="true" />
@@ -528,7 +530,7 @@ export default function Home() {
             <span className="status-badge">
               <Check size={15} aria-hidden="true" />
               {response?.aiUsage
-                ? `${response.aiUsage.provider === "gemini" ? "Gemini" : "Fallback"} · ${formatElapsed(response.aiUsage.elapsedMs)}`
+                ? `Mark · ${formatElapsed(response.aiUsage.elapsedMs)}`
                 : "Guided"}
             </span>
           </div>

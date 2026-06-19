@@ -772,7 +772,7 @@ function buildFallbackArtifact(profile: CafeProfile): StrategyArtifact {
       "Marketing0 파생 원칙: 광고보다 판단 기준, 욕망 설계, 채널별 역할 분리를 사용했습니다.",
       "사용자 입력: 가오픈 반응, 정식 오픈 후 방문 하락, 재방문율 신호를 우선 반영했습니다.",
       hasMap
-        ? "Gemini 연결 시 제공된 URL은 URL context 도구로 접근을 시도합니다."
+        ? "Mark는 제공된 URL을 참고 자료로 접근하려고 시도합니다."
         : "지도/블로그 링크가 없으면 외부 페이지 분석은 수행하지 않습니다."
     ]
   };
@@ -950,7 +950,7 @@ async function requestGeminiContent(
   if (!response.ok) {
     const errorBody = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
     throw new Error(
-      `Gemini request failed with ${response.status}${
+      `Mark request failed with ${response.status}${
         errorBody ? `: ${errorBody}` : ""
       }`
     );
@@ -1007,7 +1007,7 @@ function readGeminiResult(
     .trim();
 
   if (!text) {
-    throw new Error("Gemini returned an empty response");
+    throw new Error("Mark returned an empty response");
   }
 
   const parsed = parseGeminiJson(text);
@@ -1044,7 +1044,7 @@ async function callGemini(
     return {
       ok: false as const,
       reason:
-        "GEMINI_API_KEY was not available in the server environment at request time."
+        "Mark provider key was not available in the server environment at request time."
     };
   }
 
@@ -1054,13 +1054,13 @@ async function callGemini(
     : ["gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
   const attempts = [
     ...models.map((model) => ({
-      label: `plain structured Gemini generation (${model})`,
+      label: "Mark structured generation",
       model,
       useTools: false,
       useStructuredOutput: true
     })),
     {
-      label: `URL/Search tools (${models[0]})`,
+      label: "Mark URL/Search tools",
       model: models[0],
       useTools: true,
       useStructuredOutput: false
@@ -1112,7 +1112,7 @@ export async function createCafeCopilotResponse(
     return {
       mode: "fallback",
       assistantMessage:
-        "지금은 Gemini가 서버에서 연결되지 않아 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
+        "지금은 Mark가 서버에서 연결되지 않아 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
       intentShortcuts: [
         "가장 먼저 할 일만 보여줘",
         "돈 안 쓰는 방식으로 바꿔줘",
@@ -1121,7 +1121,7 @@ export async function createCafeCopilotResponse(
       artifact: fallback,
       retrievalNotes: [
         gemini.reason,
-        "Set GEMINI_API_KEY in the deployment environment and redeploy if this appears in production."
+        "Mark provider key needs to be available in the deployment environment."
       ],
       aiUsage: {
         provider: "fallback",
@@ -1137,7 +1137,7 @@ export async function createCafeCopilotResponse(
     return {
       mode: "fallback",
       assistantMessage:
-        "Gemini 호출이 실패해 기본 플레이북으로 먼저 답할게요. 배포 환경의 진단 메모를 확인하면 원인을 좁힐 수 있습니다.",
+        "Mark 호출이 실패해 기본 플레이북으로 먼저 답할게요. 배포 환경의 진단 메모를 확인하면 원인을 좁힐 수 있습니다.",
       intentShortcuts: [
         "가장 먼저 할 일만 보여줘",
         "돈 안 쓰는 방식으로 바꿔줘",
@@ -1145,13 +1145,13 @@ export async function createCafeCopilotResponse(
       ],
       artifact: fallback,
       retrievalNotes: [
-        `Gemini fallback reason: ${errorMessage(error)}`,
-        "If the key is present, check GEMINI_MODEL access and whether built-in URL/Search tools are enabled for the selected model."
+        `Mark fallback reason: ${errorMessage(error)}`,
+        "If the key is present, check Mark provider model access and whether built-in URL/Search tools are enabled."
       ],
       aiUsage: {
         provider: "fallback",
         model: "local-playbook",
-        attempt: "Gemini fallback after failed attempts",
+        attempt: "Mark fallback after failed attempts",
         elapsedMs: 0,
         generatedAt: new Date().toISOString()
       }
