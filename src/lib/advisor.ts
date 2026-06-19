@@ -879,6 +879,35 @@ function pickUsageNumber(...values: unknown[]) {
   return undefined;
 }
 
+function isGemini3Model(model: string) {
+  return model.startsWith("gemini-3");
+}
+
+function buildGenerationConfig(model: string, useStructuredOutput: boolean) {
+  return {
+    ...(isGemini3Model(model)
+      ? {
+          maxOutputTokens: 3072,
+          thinkingConfig: {
+            thinkingLevel: "LOW"
+          }
+        }
+      : {
+          temperature: 0.65,
+          maxOutputTokens: 3072,
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
+        }),
+    ...(useStructuredOutput
+      ? {
+          responseMimeType: "application/json",
+          responseSchema: geminiResponseSchema
+        }
+      : {})
+  };
+}
+
 async function requestGeminiContent(
   profile: CafeProfile,
   messages: ConversationMessage[],
@@ -913,19 +942,7 @@ async function requestGeminiContent(
         ...(useTools
           ? { tools: [{ url_context: {} }, { google_search: {} }] }
           : {}),
-        generationConfig: {
-          temperature: 0.65,
-          maxOutputTokens: 3072,
-          thinkingConfig: {
-            thinkingBudget: 0
-          },
-          ...(useStructuredOutput
-            ? {
-                responseMimeType: "application/json",
-                responseSchema: geminiResponseSchema
-              }
-            : {})
-        }
+        generationConfig: buildGenerationConfig(model, useStructuredOutput)
       })
     }
   );
@@ -1034,7 +1051,7 @@ async function callGemini(
   const notes: string[] = [];
   const models = process.env.GEMINI_MODEL
     ? [process.env.GEMINI_MODEL]
-    : ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
+    : ["gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
   const attempts = [
     ...models.map((model) => ({
       label: `plain structured Gemini generation (${model})`,
