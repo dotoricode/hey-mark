@@ -508,12 +508,12 @@ button:disabled {
 }
 
 .progress-value {
-  font-size: 34px;
+  font-size: 44px;
   line-height: 1;
 }
 
 .progress-unit {
-  font-size: 15px;
+  font-size: 18px;
   line-height: 1;
   font-weight: 800;
   color: var(--muted);
