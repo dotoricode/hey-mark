@@ -75,9 +75,10 @@ button:disabled {
   min-height: 260px;
   padding: 28px;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) auto;
+  grid-template-columns: 220px minmax(0, 1fr) minmax(190px, 260px);
   gap: 28px;
   align-items: end;
+  position: relative;
   overflow: hidden;
   animation: rise-in 520ms ease both;
 }
@@ -96,11 +97,27 @@ button:disabled {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  display: grid;
-  place-items: center;
-  background: var(--blue);
-  color: #fff;
+  display: block;
+  object-fit: cover;
+  background: #121212;
   box-shadow: 0 12px 30px rgba(49, 130, 246, 0.26);
+}
+
+.brand-portrait {
+  align-self: stretch;
+  min-height: 210px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(25, 31, 40, 0.1);
+  background: #111827;
+}
+
+.brand-portrait img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 50% 34%;
 }
 
 .hero-copy {
@@ -151,6 +168,12 @@ button:disabled {
   font-size: 13px;
   font-weight: 760;
   white-space: nowrap;
+}
+
+.knowledge-pill {
+  position: absolute;
+  right: 28px;
+  top: 28px;
 }
 
 .workspace-grid {
@@ -284,10 +307,34 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.primary-action:active,
+.hint-stack button:active,
+.shortcut-row button:active,
+.option-row button:active,
+.chat-input button:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.primary-action.is-active,
+.hint-stack button.is-active,
+.shortcut-row button.is-active,
+.option-row button.is-active,
+.chat-input button.is-active {
+  border-color: var(--blue);
+  background: var(--blue-dark);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(49, 130, 246, 0.14);
+}
+
 .primary-action:disabled {
   opacity: 0.55;
   transform: none;
   box-shadow: none;
+}
+
+.spin-icon {
+  animation: spin 850ms linear infinite;
+  flex: 0 0 auto;
 }
 
 .hint-stack {
@@ -467,6 +514,7 @@ button:disabled {
   border-radius: 50%;
   display: grid;
   place-items: center;
+  position: relative;
   background:
     radial-gradient(circle at center, #fff 57%, transparent 59%),
     conic-gradient(var(--blue) var(--progress), #edf1f7 0);
@@ -474,14 +522,121 @@ button:disabled {
   font-weight: 900;
 }
 
-.progress-ring span {
-  font-size: 30px;
+.progress-score {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+  transform: translateY(-1px);
 }
 
-.progress-ring small {
-  margin-top: 26px;
-  margin-left: -20px;
+.progress-value {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.progress-unit {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.ai-usage-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d5e7ff;
+  border-radius: 8px;
+  background: #f6faff;
+  color: #34506f;
+  padding: 10px 12px;
   font-size: 12px;
+}
+
+.ai-usage-strip span,
+.ai-usage-strip strong {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fff;
+  padding: 4px 9px;
+}
+
+.ai-usage-strip strong {
+  color: var(--blue-dark);
+}
+
+.metric-dashboard {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 13px;
+  display: grid;
+  gap: 9px;
+}
+
+.metric-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+}
+
+.metric-card-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.metric-card-head strong {
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.metric-card-head small {
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.metric-bar-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1f7;
+}
+
+.metric-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  animation: bar-grow 700ms ease both;
+}
+
+.metric-card b {
+  color: #0b6f59;
+  font-size: 13px;
+}
+
+.metric-card p {
+  margin: 0;
+  color: #4e5968;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .insight-band {
@@ -761,14 +916,31 @@ button:disabled {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 1100px) {
   .app-hero {
     grid-template-columns: 1fr;
     align-items: start;
   }
 
+  .brand-portrait {
+    width: min(360px, 100%);
+    min-height: 260px;
+  }
+
+  .knowledge-pill {
+    position: static;
+    justify-self: start;
+  }
+
   .workspace-grid,
   .focus-bars,
+  .metric-dashboard,
   .question-grid,
   .timeline {
     grid-template-columns: 1fr 1fr;
@@ -798,6 +970,7 @@ button:disabled {
 
   .workspace-grid,
   .focus-bars,
+  .metric-dashboard,
   .question-grid,
   .timeline,
   .stepper,

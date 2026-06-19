@@ -1,0 +1,17 @@
+{
+  "name": "Hey Mark",
+  "short_name": "Mark",
+  "description": "Mark-powered marketing strategy workspace",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f9fc",
+  "theme_color": "#3182f6",
+  "icons": [
+    {
+      "src": "/mark.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

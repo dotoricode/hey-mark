@@ -45,6 +45,13 @@ export type StrategyArtifact = {
     label: string;
     task: string;
   }>;
+  metrics: Array<{
+    label: string;
+    value: number;
+    unit: string;
+    status: string;
+    explanation: string;
+  }>;
   sourceNotes: string[];
 };
 
@@ -54,6 +61,16 @@ export type CafeCopilotResponse = {
   intentShortcuts: string[];
   artifact: StrategyArtifact;
   retrievalNotes: string[];
+  aiUsage?: {
+    provider: "gemini" | "fallback";
+    model: string;
+    attempt: string;
+    elapsedMs: number;
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    generatedAt: string;
+  };
 };
 
 export type CafeCopilotRequest = {
@@ -85,13 +102,21 @@ function cleanText(value: unknown, fallback: string, maxLength: number) {
   return (compact || fallback).slice(0, maxLength);
 }
 
+function cleanProfileText(value: unknown, fallback: string, maxLength: number) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
 export function normalizeCafeProfile(input: unknown): CafeProfile {
   const raw = typeof input === "object" && input !== null ? input : {};
 
   return Object.fromEntries(
     (Object.keys(defaults) as Array<keyof CafeProfile>).map((key) => [
       key,
-      cleanText(
+      cleanProfileText(
         (raw as Partial<CafeProfile>)[key],
         defaults[key],
         maxLengths[key]
@@ -157,6 +182,17 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeConfidence(value: unknown, fallback: number) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  const percentage = numeric > 0 && numeric <= 1 ? numeric * 100 : numeric;
+  return Math.round(clamp(percentage, 0, 100));
+}
+
 function extractJson(text: string) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) {
@@ -182,6 +218,182 @@ function parseGeminiJson(text: string) {
   }
 }
 
+function latestUserMessage(messages: ConversationMessage[]) {
+  return [...messages].reverse().find((message) => message.role === "user")
+    ?.content;
+}
+
+function isGenericAssistantMessage(value: string) {
+  const compact = value.replace(/\s+/g, " ").trim();
+
+  return (
+    compact.includes("부족한 부분은 질문으로 좁혀볼게요") ||
+    compact.includes("첫 실행안을 만들고") ||
+    (compact.includes("질문으로") && !compact.includes("?"))
+  );
+}
+
+function buildSpecificAssistantMessage(
+  messages: ConversationMessage[],
+  artifact: StrategyArtifact
+) {
+  const latestUser = latestUserMessage(messages);
+  const firstPlay = artifact.plays[0];
+  const nextQuestion = artifact.questions[0];
+  const prefix = latestUser
+    ? `"${latestUser}" 내용을 반영해 전략을 "${artifact.title}"로 업데이트했어요.`
+    : `지금 정보로는 "${artifact.title}"부터 실행하는 게 맞습니다.`;
+  const action = firstPlay ? `먼저 ${firstPlay.oneLine}` : "";
+  const question = nextQuestion
+    ? `다음으로 하나만 확인할게요. ${nextQuestion.label}`
+    : "";
+
+  return [prefix, action, question].filter(Boolean).join(" ");
+}
+
+function normalizeAssistantMessage(
+  value: unknown,
+  messages: ConversationMessage[],
+  artifact: StrategyArtifact
+) {
+  const fallback = buildSpecificAssistantMessage(messages, artifact);
+  const assistantMessage = cleanText(value, fallback, 360);
+
+  return isGenericAssistantMessage(assistantMessage)
+    ? fallback
+    : assistantMessage;
+}
+
+type GeminiSchema = {
+  type: "OBJECT" | "ARRAY" | "STRING" | "NUMBER" | "INTEGER";
+  properties?: Record<string, GeminiSchema>;
+  items?: GeminiSchema;
+  required?: string[];
+};
+
+const stringSchema: GeminiSchema = { type: "STRING" };
+const numberSchema: GeminiSchema = { type: "NUMBER" };
+const stringArraySchema: GeminiSchema = {
+  type: "ARRAY",
+  items: stringSchema
+};
+
+const cafeResearchPatterns = [
+  "Occasion design: anchor the offer to one visit moment, not to a broad segment.",
+  "Habit loop: make the cue, routine, and reward visible in the same channel.",
+  "Lossless offer framing: prefer a small upgrade or access reason over repeating a large discount.",
+  "Local proof near purchase: reduce uncertainty with map photos, menu proof, route cues, and recent reviews.",
+  "Cohort retention: separate first visit, repeat visit, and dormant customers before choosing the message.",
+  "Choice architecture: promote one signature decision path when the customer is new or rushed.",
+  "Scarcity with service reality: limit by time slot or batch size only when the cafe can actually fulfill it."
+];
+
+const geminiResponseSchema: GeminiSchema = {
+  type: "OBJECT",
+  required: ["assistantMessage", "intentShortcuts", "artifact"],
+  properties: {
+    assistantMessage: stringSchema,
+    intentShortcuts: stringArraySchema,
+    artifact: {
+      type: "OBJECT",
+      required: [
+        "title",
+        "plainSummary",
+        "hiddenInsight",
+        "confidence",
+        "focus",
+        "assumedFacts",
+        "questions",
+        "plays",
+        "timeline",
+        "metrics",
+        "sourceNotes"
+      ],
+      properties: {
+        title: stringSchema,
+        plainSummary: stringSchema,
+        hiddenInsight: stringSchema,
+        confidence: numberSchema,
+        focus: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            required: ["label", "value"],
+            properties: {
+              label: stringSchema,
+              value: numberSchema
+            }
+          }
+        },
+        assumedFacts: stringArraySchema,
+        questions: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            required: ["id", "label", "reason", "suggestions"],
+            properties: {
+              id: stringSchema,
+              label: stringSchema,
+              reason: stringSchema,
+              suggestions: stringArraySchema
+            }
+          }
+        },
+        plays: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            required: [
+              "title",
+              "oneLine",
+              "whyItWorks",
+              "steps",
+              "copy",
+              "metric",
+              "risk"
+            ],
+            properties: {
+              title: stringSchema,
+              oneLine: stringSchema,
+              whyItWorks: stringSchema,
+              steps: stringArraySchema,
+              copy: stringArraySchema,
+              metric: stringSchema,
+              risk: stringSchema
+            }
+          }
+        },
+        timeline: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            required: ["label", "task"],
+            properties: {
+              label: stringSchema,
+              task: stringSchema
+            }
+          }
+        },
+        metrics: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            required: ["label", "value", "unit", "status", "explanation"],
+            properties: {
+              label: stringSchema,
+              value: numberSchema,
+              unit: stringSchema,
+              status: stringSchema,
+              explanation: stringSchema
+            }
+          }
+        },
+        sourceNotes: stringArraySchema
+      }
+    }
+  }
+};
+
 function asStringArray(value: unknown, fallback: string[], limit = 6) {
   if (!Array.isArray(value)) {
     return fallback;
@@ -194,6 +406,66 @@ function asStringArray(value: unknown, fallback: string[], limit = 6) {
     .slice(0, limit);
 
   return values.length > 0 ? values : fallback;
+}
+
+function normalizeMetrics(
+  value: unknown,
+  fallback: StrategyArtifact["metrics"]
+) {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const metrics = value
+    .map((item, index) => {
+      if (typeof item !== "object" || item === null) {
+        return null;
+      }
+
+      const fallbackMetric = fallback[index] ?? fallback[0];
+      const raw = item as Partial<StrategyArtifact["metrics"][number]>;
+      const unit = cleanText(raw.unit, fallbackMetric.unit, 12);
+      const status = cleanText(raw.status, fallbackMetric.status, 42);
+      const statusMap: Record<string, string> = {
+        target: "목표",
+        monitor: "관찰 필요",
+        average: "보통",
+        moderate: "보통",
+        good: "양호",
+        low: "낮음",
+        high: "높음",
+        ready: "준비됨",
+        pending: "확인 필요"
+      };
+      const lowerStatus = status.toLowerCase().trim();
+      const normalizedStatus =
+        statusMap[lowerStatus] ??
+        (/unknown|current|n\/a|none|^[a-z\s_-]+$/i.test(status)
+          ? "확인 필요"
+          : status);
+      const metricValue = normalizeConfidence(raw.value, fallbackMetric.value);
+
+      return {
+        label: cleanText(raw.label, fallbackMetric.label, 42),
+        value: metricValue,
+        unit: /unknown|current|n\/a|none/i.test(unit) ? fallbackMetric.unit : unit,
+        status:
+          metricValue === 0 && /목표|양호|높음|우수/.test(normalizedStatus)
+            ? "기준값 필요"
+            : normalizedStatus,
+        explanation: cleanText(
+          raw.explanation,
+          fallbackMetric.explanation,
+          160
+        )
+      };
+    })
+    .filter(
+      (item): item is StrategyArtifact["metrics"][number] => item !== null
+    )
+    .slice(0, 4);
+
+  return metrics.length > 0 ? metrics : fallback;
 }
 
 function normalizeArtifact(value: unknown, fallback: StrategyArtifact) {
@@ -314,12 +586,13 @@ function normalizeArtifact(value: unknown, fallback: StrategyArtifact) {
     title: cleanText(raw.title, fallback.title, 80),
     plainSummary: cleanText(raw.plainSummary, fallback.plainSummary, 260),
     hiddenInsight: cleanText(raw.hiddenInsight, fallback.hiddenInsight, 260),
-    confidence: clamp(Number(raw.confidence) || fallback.confidence, 0, 100),
+    confidence: normalizeConfidence(raw.confidence, fallback.confidence),
     focus: focus.length > 0 ? focus : fallback.focus,
     assumedFacts: asStringArray(raw.assumedFacts, fallback.assumedFacts, 6),
     questions,
     plays,
     timeline,
+    metrics: normalizeMetrics(raw.metrics, fallback.metrics),
     sourceNotes: asStringArray(raw.sourceNotes, fallback.sourceNotes, 6)
   };
 }
@@ -331,11 +604,15 @@ function buildFallbackArtifact(profile: CafeProfile): StrategyArtifact {
   const hasMap = includesAny(profile.placeHint, ["naver", "map", "지도", "place"]);
 
   return {
-    title: "가오픈 수요를 평일 루틴으로 바꾸는 14일 실험",
-    plainSummary:
-      "방문 인구가 없는 문제가 아니라, 정식 오픈 후에도 오늘 다시 들를 이유가 약한 상태로 보입니다. 큰 증정을 반복하지 말고 시간대와 메뉴를 묶은 작은 명분을 먼저 만드세요.",
-    hiddenInsight:
-      "가오픈 혜택은 고객이 가격에만 반응했다는 뜻이 아니라, 근처 사람들이 이미 매장을 알아차릴 준비가 되어 있다는 신호입니다. 이제는 '싸서 방문'이 아니라 '내 동선에 넣기 쉬워서 방문'으로 바꿔야 합니다.",
+    title: hadBigPromo
+      ? "가오픈 수요를 평일 루틴으로 바꾸는 14일 실험"
+      : "첫 방문 이유를 하나로 고정하는 14일 실험",
+    plainSummary: hadBigPromo
+      ? "방문 인구가 없는 문제가 아니라, 정식 오픈 후에도 오늘 다시 들를 이유가 약한 상태로 보입니다. 큰 증정을 반복하지 말고 시간대와 메뉴를 묶은 작은 명분을 먼저 만드세요."
+      : "아직 정보가 부족하므로 큰 캠페인보다 손님이 이해할 첫 방문 이유를 하나로 고정하는 편이 안전합니다. 대표 메뉴, 시간대, 안내 문구를 먼저 맞추세요.",
+    hiddenInsight: hadBigPromo
+      ? "가오픈 혜택은 고객이 가격에만 반응했다는 뜻이 아니라, 근처 사람들이 이미 매장을 알아차릴 준비가 되어 있다는 신호입니다. 이제는 '싸서 방문'이 아니라 '내 동선에 넣기 쉬워서 방문'으로 바꿔야 합니다."
+      : "손님이 안 오는 이유를 모를 때는 채널을 늘리기보다 선택 기준을 먼저 만들어야 합니다. 처음 온 사람이 무엇을 주문하고 언제 오면 좋은지 바로 알면 지도와 매장 안내가 같은 역할을 합니다.",
     confidence: hasRepeat ? 76 : 62,
     focus: [
       { label: "방문 명분", value: 86 },
@@ -374,23 +651,43 @@ function buildFallbackArtifact(profile: CafeProfile): StrategyArtifact {
     ],
     plays: [
       {
-        title: "가오픈 고객 회수권",
-        oneLine: "가오픈 때 온 사람에게만 보이는 듯한 7일 재초대 명분을 만듭니다.",
-        whyItWorks:
-          "사람이 몰렸던 이유를 큰 할인으로 반복하면 원가와 브랜드가 같이 무너집니다. 대신 '정식 메뉴를 다시 경험해 달라'는 감사권으로 방문 이유를 좁히면 재방문 고객을 회수하기 쉽습니다.",
-        steps: [
-          "네이버 소식, 인스타 고정글, 매장 입구에 같은 문구를 7일만 걸어둡니다.",
-          "혜택은 디저트 2개 증정이 아니라 미니 베이커리 업그레이드처럼 작게 둡니다.",
-          "사용 가능 시간을 평일 오전이나 낮처럼 빈 시간대로 제한합니다.",
-          "방문 시 다음 방문용 작은 쿠폰 이미지를 전달합니다."
-        ],
-        copy: [
-          "가오픈 때 와주셨다면, 이번엔 정식 메뉴로 다시 초대합니다.",
-          "큰 증정보다 오래 기억될 한 조각으로 준비했습니다.",
-          "이번 주 평일 낮에만 열어둔 감사권입니다."
-        ],
-        metric: "7일권 사용 수, 사용 시간대, 재방문 고객의 동행 여부",
-        risk: "혜택이 너무 크면 정가 방문 이유가 약해지므로 업그레이드형으로 제한하세요."
+        title: hadBigPromo ? "가오픈 고객 회수권" : "첫 방문 이유 만들기",
+        oneLine: hadBigPromo
+          ? "가오픈 때 온 사람에게만 보이는 듯한 7일 재초대 명분을 만듭니다."
+          : "처음 보는 손님도 바로 이해할 수 있는 대표 메뉴와 방문 시간대 하나를 묶습니다.",
+        whyItWorks: hadBigPromo
+          ? "사람이 몰렸던 이유를 큰 할인으로 반복하면 원가와 브랜드가 같이 무너집니다. 대신 '정식 메뉴를 다시 경험해 달라'는 감사권으로 방문 이유를 좁히면 재방문 고객을 회수하기 쉽습니다."
+          : "정보가 부족할수록 광고보다 먼저 필요한 것은 손님이 기억할 한 문장입니다. 대표 메뉴와 시간대를 하나로 고정하면 네이버지도, 매장 문구, 직원 안내가 같은 방향으로 움직입니다.",
+        steps: hadBigPromo
+          ? [
+              "네이버 소식, 인스타 고정글, 매장 입구에 같은 문구를 7일만 걸어둡니다.",
+              "혜택은 디저트 2개 증정이 아니라 미니 베이커리 업그레이드처럼 작게 둡니다.",
+              "사용 가능 시간을 평일 오전이나 낮처럼 빈 시간대로 제한합니다.",
+              "방문 시 다음 방문용 작은 쿠폰 이미지를 전달합니다."
+            ]
+          : [
+              "대표 메뉴 후보 1개와 가장 비는 시간대 1개를 정합니다.",
+              "매장 입구, 네이버 소식, 인스타 첫 문장에 같은 방문 이유를 씁니다.",
+              "첫 방문 손님에게 왜 그 메뉴를 먼저 권하는지 직원 안내 문장으로 고정합니다.",
+              "하루가 끝나면 그 문구를 보고 온 손님이 있었는지만 체크합니다."
+            ],
+        copy: hadBigPromo
+          ? [
+              "가오픈 때 와주셨다면, 이번엔 정식 메뉴로 다시 초대합니다.",
+              "큰 증정보다 오래 기억될 한 조각으로 준비했습니다.",
+              "이번 주 평일 낮에만 열어둔 감사권입니다."
+            ]
+          : [
+              "처음 오셨다면 이 메뉴부터 드셔보세요.",
+              "오늘 가장 조용한 시간에 준비해둔 한 잔입니다.",
+              "고민 없이 고를 수 있게 한 가지부터 추천드릴게요."
+            ],
+        metric: hadBigPromo
+          ? "7일권 사용 수, 사용 시간대, 재방문 고객의 동행 여부"
+          : "대표 메뉴 주문 수, 추천 문구를 듣고 주문한 고객 수, 첫 방문 고객의 재방문 의향",
+        risk: hadBigPromo
+          ? "혜택이 너무 크면 정가 방문 이유가 약해지므로 업그레이드형으로 제한하세요."
+          : "대표 메뉴와 시간대를 동시에 여러 개 밀면 기억이 흐려지므로 1-2주 동안 하나만 반복하세요."
       },
       {
         title: "동네 루틴 세트",
@@ -437,11 +734,45 @@ function buildFallbackArtifact(profile: CafeProfile): StrategyArtifact {
       { label: "7일", task: "가오픈 감사권을 빈 시간대 한정으로 운영합니다." },
       { label: "14일", task: "반응이 있는 시간대와 메뉴만 남기고 다음 캠페인 이름을 고정합니다." }
     ],
+    metrics: [
+      {
+        label: "평일 낮 전환 가능성",
+        value: hasRepeat ? 78 : 62,
+        unit: "점",
+        status: hasRepeat ? "실험 우선순위 높음" : "메뉴 증거 보강 필요",
+        explanation:
+          "재방문 신호가 있으면 할인보다 시간대 명분을 붙였을 때 반응을 볼 가능성이 높습니다."
+      },
+      {
+        label: "지도 증거 준비도",
+        value: hasMap ? 72 : 44,
+        unit: "점",
+        status: hasMap ? "점검 가능" : "링크/사진 필요",
+        explanation:
+          "네이버지도 사진, 저장, 길찾기 같은 방문 직전 지표를 확인해야 실행안이 선명해집니다."
+      },
+      {
+        label: "혜택 의존 위험",
+        value: hadBigPromo ? 68 : 38,
+        unit: "점",
+        status: hadBigPromo ? "혜택 축소 설계 필요" : "낮음",
+        explanation:
+          "큰 증정이 잘 먹혔던 경우, 다음 캠페인은 할인보다 업그레이드형 보상으로 줄여야 합니다."
+      },
+      {
+        label: "재방문 기반",
+        value: hasRepeat ? 80 : 50,
+        unit: "점",
+        status: hasRepeat ? "회수 캠페인 가능" : "확인 필요",
+        explanation:
+          "30-40% 재방문은 기존 고객을 다시 부르는 실험부터 할 근거가 됩니다."
+      }
+    ],
     sourceNotes: [
       "Marketing0 파생 원칙: 광고보다 판단 기준, 욕망 설계, 채널별 역할 분리를 사용했습니다.",
       "사용자 입력: 가오픈 반응, 정식 오픈 후 방문 하락, 재방문율 신호를 우선 반영했습니다.",
       hasMap
-        ? "Gemini 연결 시 제공된 URL은 URL context 도구로 접근을 시도합니다."
+        ? "Mark는 제공된 URL을 참고 자료로 접근하려고 시도합니다."
         : "지도/블로그 링크가 없으면 외부 페이지 분석은 수행하지 않습니다."
     ]
   };
@@ -451,16 +782,26 @@ function buildSystemInstruction() {
   const principles = marketing0Knowledge.derivedPrinciples
     .map((principle) => `- ${principle.title}: ${principle.note}`)
     .join("\n");
+  const researchPatterns = cafeResearchPatterns
+    .map((pattern) => `- ${pattern}`)
+    .join("\n");
 
   return [
     "You are Hey Mark, a Korean cafe marketing copilot for non-expert cafe owners.",
     "Answer in Korean. Be concrete, plain, and operational.",
     "Never write generic strategy words without a specific customer moment, offer, step, metric, and risk.",
+    "Do not invent demographics, menu items, promotions, or customer segments that are not in the cafe profile or recent conversation.",
+    "Do not claim you inspected a URL, map, reviews, photos, parking, menu, or external page unless tool metadata or retrieved source notes prove it.",
+    "The assistantMessage must directly respond to the latest user message and must not repeat a previous assistantMessage.",
+    "If more information is needed, put exactly one concrete follow-up question in assistantMessage.",
     "Use the user's cafe context first. If links are available, use URL context only as supporting evidence and do not claim inaccessible data was retrieved.",
-    "Actively ask up to 3 follow-up questions when information is ambiguous or missing.",
+    "Put up to 3 additional follow-up questions inside artifact.questions when information is ambiguous or missing.",
+    "Without verified URL retrieval, do not mention parking, business hours, actual menu names, review/photo counts, or page-specific facts unless the user provided them.",
     "Return JSON only. No markdown fences.",
     "Marketing0 derived principles:",
     principles,
+    "Research-informed cafe marketing pattern bank. Use these as reasoning patterns, not as claimed citations or training data:",
+    researchPatterns,
     `Knowledge limitation: ${marketing0Knowledge.sufficiency}. Do not pretend this is a complete cafe corpus.`
   ].join("\n");
 }
@@ -472,48 +813,10 @@ function buildPrompt(profile: CafeProfile, messages: ConversationMessage[]) {
 
   return [
     "Create a cafe marketing strategy artifact.",
-    "",
-    "Required JSON shape:",
-    JSON.stringify(
-      {
-        assistantMessage: "string",
-        intentShortcuts: ["string", "string", "string"],
-        artifact: {
-          title: "string",
-          plainSummary: "string",
-          hiddenInsight: "string",
-          confidence: 0,
-          focus: [
-            { label: "string", value: 0 },
-            { label: "string", value: 0 }
-          ],
-          assumedFacts: ["string"],
-          questions: [
-            {
-              id: "string",
-              label: "string",
-              reason: "string",
-              suggestions: ["string"]
-            }
-          ],
-          plays: [
-            {
-              title: "string",
-              oneLine: "string",
-              whyItWorks: "string",
-              steps: ["string"],
-              copy: ["string"],
-              metric: "string",
-              risk: "string"
-            }
-          ],
-          timeline: [{ label: "string", task: "string" }],
-          sourceNotes: ["string"]
-        }
-      },
-      null,
-      2
-    ),
+    "Return data that fits the configured response schema.",
+    "Keep all user-facing strings in Korean.",
+    "assistantMessage must either answer the latest user request with a concrete next action or ask one specific follow-up question. Do not say only that you will narrow things down later.",
+    "The cafe profile and recent conversation are the source of truth. Do not switch to a different audience, offer, or problem unless the user explicitly asked for it.",
     "",
     "Cafe profile:",
     `- placeHint: ${profile.placeHint}`,
@@ -526,10 +829,17 @@ function buildPrompt(profile: CafeProfile, messages: ConversationMessage[]) {
     "",
     "Rules:",
     "- Make the first strategy feel like an idea the owner can execute tomorrow.",
+    "- Reflect the latest user message in artifact.title, artifact.plays, artifact.questions, and assistantMessage.",
+    "- If the latest user message answers one of the previous questions, do not ask that same question again. Use the answer to revise the strategy and ask the next unresolved question.",
     "- If the owner gave a Naver Map, Instagram, or blog URL, analyze it through URL context when accessible and include retrieval caveats in sourceNotes.",
+    "- If URL context was not retrieved in the current response, treat links as user-provided hints only. Do not say '네이버 지도를 보니' or mention map-specific facts.",
+    "- Without verified URL retrieval, do not mention parking, business hours, existing menu names, existing review details, or existing photo details unless the user explicitly wrote them.",
     "- If data is missing, ask questions inside artifact.questions and still provide a provisional idea.",
     "- Do not ask for information that can be inferred from an accessible URL.",
-    "- Keep each play creative but measurable."
+    "- Keep each play creative but measurable.",
+    "- artifact.metrics must include 3-4 quantitative indicators with value 0-100, unit, status, and a plain explanation of what the number means.",
+    "- For artifact.metrics, value is a normalized readiness/priority score, not raw visitor counts. Prefer unit '점' or '%' and never output unit/status as unknown, current, none, or n/a.",
+    "- Avoid fake precision. If the number is an estimate, make that clear in explanation or sourceNotes."
   ].join("\n");
 }
 
@@ -537,17 +847,81 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+type GeminiRawResponse = {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    url_context_metadata?: {
+      url_metadata?: Array<{
+        retrieved_url?: string;
+        url_retrieval_status?: string;
+      }>;
+    };
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  usage_metadata?: {
+    prompt_token_count?: number;
+    candidates_token_count?: number;
+    total_token_count?: number;
+  };
+};
+
+function pickUsageNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.round(value);
+    }
+  }
+
+  return undefined;
+}
+
+function isGemini3Model(model: string) {
+  return model.startsWith("gemini-3");
+}
+
+function buildGenerationConfig(model: string, useStructuredOutput: boolean) {
+  return {
+    ...(isGemini3Model(model)
+      ? {
+          maxOutputTokens: 3072,
+          thinkingConfig: {
+            thinkingLevel: "LOW"
+          }
+        }
+      : {
+          temperature: 0.65,
+          maxOutputTokens: 3072,
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
+        }),
+    ...(useStructuredOutput
+      ? {
+          responseMimeType: "application/json",
+          responseSchema: geminiResponseSchema
+        }
+      : {})
+  };
+}
+
 async function requestGeminiContent(
   profile: CafeProfile,
   messages: ConversationMessage[],
-  useTools: boolean
+  model: string,
+  useTools: boolean,
+  useStructuredOutput: boolean,
+  attempt: string
 ) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const startedAt = Date.now();
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -568,10 +942,7 @@ async function requestGeminiContent(
         ...(useTools
           ? { tools: [{ url_context: {} }, { google_search: {} }] }
           : {}),
-        generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 4096
-        }
+        generationConfig: buildGenerationConfig(model, useStructuredOutput)
       })
     }
   );
@@ -579,30 +950,56 @@ async function requestGeminiContent(
   if (!response.ok) {
     const errorBody = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
     throw new Error(
-      `Gemini request failed with ${response.status}${
+      `Mark request failed with ${response.status}${
         errorBody ? `: ${errorBody}` : ""
       }`
     );
   }
 
-  return (await response.json()) as {
-    candidates?: Array<{
-      content?: { parts?: Array<{ text?: string }> };
-      url_context_metadata?: {
-        url_metadata?: Array<{
-          retrieved_url?: string;
-          url_retrieval_status?: string;
-        }>;
-      };
-    }>;
+  const data = (await response.json()) as GeminiRawResponse;
+  const usage = data.usageMetadata;
+  const snakeUsage = data.usage_metadata;
+  const aiUsage: NonNullable<CafeCopilotResponse["aiUsage"]> = {
+    provider: "gemini",
+    model,
+    attempt,
+    elapsedMs: Date.now() - startedAt,
+    promptTokens: pickUsageNumber(
+      usage?.promptTokenCount,
+      snakeUsage?.prompt_token_count
+    ),
+    outputTokens: pickUsageNumber(
+      usage?.candidatesTokenCount,
+      snakeUsage?.candidates_token_count
+    ),
+    totalTokens: pickUsageNumber(
+      usage?.totalTokenCount,
+      snakeUsage?.total_token_count
+    ),
+    generatedAt: new Date().toISOString()
+  };
+
+  console.info("[hey-mark-ai]", {
+    provider: aiUsage.provider,
+    model: aiUsage.model,
+    attempt: aiUsage.attempt,
+    elapsedMs: aiUsage.elapsedMs,
+    totalTokens: aiUsage.totalTokens ?? null
+  });
+
+  return {
+    data,
+    aiUsage
   };
 }
 
 function readGeminiResult(
-  data: Awaited<ReturnType<typeof requestGeminiContent>>,
+  result: Awaited<ReturnType<typeof requestGeminiContent>>,
   fallback: StrategyArtifact,
-  notes: string[]
+  notes: string[],
+  messages: ConversationMessage[]
 ) {
+  const { data, aiUsage } = result;
   const candidate = data.candidates?.[0];
   const text = candidate?.content?.parts
     ?.map((part) => part.text ?? "")
@@ -610,10 +1007,11 @@ function readGeminiResult(
     .trim();
 
   if (!text) {
-    throw new Error("Gemini returned an empty response");
+    throw new Error("Mark returned an empty response");
   }
 
   const parsed = parseGeminiJson(text);
+  const artifact = normalizeArtifact(parsed.artifact, fallback);
   const urlNotes =
     candidate?.url_context_metadata?.url_metadata?.map((item) =>
       `${item.retrieved_url ?? "URL"}: ${item.url_retrieval_status ?? "unknown"}`
@@ -621,18 +1019,19 @@ function readGeminiResult(
 
   return {
     ok: true as const,
-    assistantMessage: cleanText(
+    assistantMessage: normalizeAssistantMessage(
       parsed.assistantMessage,
-      "좋아요. 지금 정보만으로도 첫 실행안을 만들고, 부족한 부분은 질문으로 좁혀볼게요.",
-      280
+      messages,
+      artifact
     ),
     intentShortcuts: asStringArray(parsed.intentShortcuts, [
       "가장 먼저 할 일만 보여줘",
       "돈 안 쓰는 방식으로 바꿔줘",
       "인스타/네이버 문구를 더 써줘"
     ]),
-    artifact: normalizeArtifact(parsed.artifact, fallback),
-    retrievalNotes: [...notes, ...urlNotes]
+    artifact,
+    retrievalNotes: [...notes, ...urlNotes],
+    aiUsage
   };
 }
 
@@ -645,14 +1044,27 @@ async function callGemini(
     return {
       ok: false as const,
       reason:
-        "GEMINI_API_KEY was not available in the server environment at request time."
+        "Mark provider key was not available in the server environment at request time."
     };
   }
 
   const notes: string[] = [];
+  const models = process.env.GEMINI_MODEL
+    ? [process.env.GEMINI_MODEL]
+    : ["gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
   const attempts = [
-    { label: "URL/Search tools", useTools: true },
-    { label: "plain Gemini generation", useTools: false }
+    ...models.map((model) => ({
+      label: "Mark structured generation",
+      model,
+      useTools: false,
+      useStructuredOutput: true
+    })),
+    {
+      label: "Mark URL/Search tools",
+      model: models[0],
+      useTools: true,
+      useStructuredOutput: false
+    }
   ];
 
   for (const attempt of attempts) {
@@ -660,10 +1072,13 @@ async function callGemini(
       const data = await requestGeminiContent(
         profile,
         messages,
-        attempt.useTools
+        attempt.model,
+        attempt.useTools,
+        attempt.useStructuredOutput,
+        attempt.label
       );
 
-      return readGeminiResult(data, fallback, notes);
+      return readGeminiResult(data, fallback, notes, messages);
     } catch (attemptError) {
       notes.push(`${attempt.label} failed: ${errorMessage(attemptError)}`);
     }
@@ -689,14 +1104,15 @@ export async function createCafeCopilotResponse(
         assistantMessage: gemini.assistantMessage,
         intentShortcuts: gemini.intentShortcuts,
         artifact: gemini.artifact,
-        retrievalNotes: gemini.retrievalNotes
+        retrievalNotes: gemini.retrievalNotes,
+        aiUsage: gemini.aiUsage
       };
     }
 
     return {
       mode: "fallback",
       assistantMessage:
-        "지금은 Gemini가 서버에서 연결되지 않아 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
+        "지금은 Mark가 서버에서 연결되지 않아 기본 플레이북으로 먼저 답할게요. 그래도 입력한 신호 기준으로 바로 실행할 수 있는 안부터 좁혔습니다.",
       intentShortcuts: [
         "가장 먼저 할 일만 보여줘",
         "돈 안 쓰는 방식으로 바꿔줘",
@@ -705,8 +1121,15 @@ export async function createCafeCopilotResponse(
       artifact: fallback,
       retrievalNotes: [
         gemini.reason,
-        "Set GEMINI_API_KEY in the deployment environment and redeploy if this appears in production."
-      ]
+        "Mark provider key needs to be available in the deployment environment."
+      ],
+      aiUsage: {
+        provider: "fallback",
+        model: "local-playbook",
+        attempt: "missing GEMINI_API_KEY",
+        elapsedMs: 0,
+        generatedAt: new Date().toISOString()
+      }
     };
   } catch (error) {
     console.error(error);
@@ -714,7 +1137,7 @@ export async function createCafeCopilotResponse(
     return {
       mode: "fallback",
       assistantMessage:
-        "Gemini 호출이 실패해 기본 플레이북으로 먼저 답할게요. 배포 환경의 진단 메모를 확인하면 원인을 좁힐 수 있습니다.",
+        "Mark 호출이 실패해 기본 플레이북으로 먼저 답할게요. 배포 환경의 진단 메모를 확인하면 원인을 좁힐 수 있습니다.",
       intentShortcuts: [
         "가장 먼저 할 일만 보여줘",
         "돈 안 쓰는 방식으로 바꿔줘",
@@ -722,9 +1145,16 @@ export async function createCafeCopilotResponse(
       ],
       artifact: fallback,
       retrievalNotes: [
-        `Gemini fallback reason: ${errorMessage(error)}`,
-        "If the key is present, check GEMINI_MODEL access and whether built-in URL/Search tools are enabled for the selected model."
-      ]
+        `Mark fallback reason: ${errorMessage(error)}`,
+        "If the key is present, check Mark provider model access and whether built-in URL/Search tools are enabled."
+      ],
+      aiUsage: {
+        provider: "fallback",
+        model: "local-playbook",
+        attempt: "Mark fallback after failed attempts",
+        elapsedMs: 0,
+        generatedAt: new Date().toISOString()
+      }
     };
   }
 }
